@@ -1,0 +1,44 @@
+services:
+  sluice:
+    build:
+      context: ..
+      dockerfile: .devcontainer/Dockerfile
+    command: ["./build/release/sluice"]
+    ports:
+      - "8080:8080"
+    depends_on:
+      - backend-a
+      - backend-b
+      - backend-c
+
+  nginx:
+    image: nginx:1.27
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    ports:
+      - "8081:8081"
+    depends_on:
+      - backend-a
+      - backend-b
+      - backend-c
+
+  backend-a:
+    build:
+      context: ./backends
+    command: ["--name", "backend-a", "--port", "9000"]
+    ports:
+      - "9001:9000"
+
+  backend-b:
+    build:
+      context: ./backends
+    command: ["--name", "backend-b", "--port", "9000"]
+    ports:
+      - "9002:9000"
+
+  backend-c:
+    build:
+      context: ./backends
+    command: ["--name", "backend-c", "--port", "9000"]
+    ports:
+      - "9003:9000"

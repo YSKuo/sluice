@@ -1,0 +1,64 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 25,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "debug-asan",
+      "displayName": "Debug + ASan/UBSan",
+      "description": "Day-to-day development build with AddressSanitizer and UndefinedBehaviorSanitizer enabled.",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/debug-asan",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_C_COMPILER": "clang",
+        "CMAKE_CXX_COMPILER": "clang++",
+        "SLUICE_WERROR": "ON",
+        "CMAKE_CXX_FLAGS": "-fsanitize=address,undefined -fno-omit-frame-pointer",
+        "CMAKE_EXE_LINKER_FLAGS": "-fsanitize=address,undefined"
+      }
+    },
+    {
+      "name": "release",
+      "displayName": "Release",
+      "description": "Optimized build with debug symbols retained, used for benchmarking.",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "CMAKE_C_COMPILER": "clang",
+        "CMAKE_CXX_COMPILER": "clang++",
+        "SLUICE_WERROR": "ON"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "debug-asan",
+      "configurePreset": "debug-asan"
+    },
+    {
+      "name": "release",
+      "configurePreset": "release"
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "debug-asan",
+      "configurePreset": "debug-asan",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "release",
+      "configurePreset": "release",
+      "output": {
+        "outputOnFailure": true
+      }
+    }
+  ]
+}

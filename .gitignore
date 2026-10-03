@@ -1,0 +1,11 @@
+build/
+build-*/
+.cache/
+compile_commands.json
+*.o
+*.obj
+*.out
+*.log
+.DS_Store
+.vscode/
+*.user

@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  debug-asan:
+    name: Debug + ASan/UBSan
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang cmake ninja-build
+      - name: Configure
+        run: cmake --preset debug-asan
+      - name: Build
+        run: cmake --build --preset debug-asan
+      - name: Test
+        run: ctest --preset debug-asan
+
+  release:
+    name: Release build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang cmake ninja-build
+      - name: Configure
+        run: cmake --preset release
+      - name: Build
+        run: cmake --build --preset release
+
+  clang-format:
+    name: Format check
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install clang-format
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang-format
+      - name: Check formatting
+        run: ./scripts/format.sh --check

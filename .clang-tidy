@@ -1,0 +1,26 @@
+# Keep the rule set small and high-signal: only bugprone-* and performance-*
+# checks, plus a handful of modernize-* checks for C++20 idioms. Every
+# disabled check below is listed individually with the reason it is off,
+# so the exclusion list stays auditable instead of growing silently.
+Checks: >
+  -*,
+  bugprone-*,
+  performance-*,
+  modernize-use-override,
+  modernize-use-nullptr,
+  modernize-use-equals-default,
+  modernize-use-equals-delete,
+  modernize-use-using,
+  -bugprone-easily-swappable-parameters,
+  -bugprone-exception-escape
+
+# bugprone-easily-swappable-parameters: fires constantly on socket/fd-style
+# APIs that take several same-typed parameters (e.g. fd, port, backlog);
+# too noisy to be actionable for this codebase.
+# bugprone-exception-escape: hot-path code in this project reports errors
+# via return values rather than exceptions, so this check mostly produces
+# false positives from noexcept inference rather than real bugs.
+
+WarningsAsErrors: ''
+HeaderFilterRegex: '^.*/(src|tests)/.*'
+FormatStyle: file
