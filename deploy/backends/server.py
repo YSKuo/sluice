@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """Minimal HTTP backend used as an upstream target for sluice benchmarks.
 
-Responds with its own name on every request. Supports injecting latency
-(--delay-ms) to exercise backpressure, and injecting errors (--fail-rate)
-to exercise upstream timeout and passive down-marking behavior.
+GET responds with the backend's own name; POST echoes the request body
+back (read via Content-Length), to exercise request-body forwarding.
+Supports injecting latency (--delay-ms) to exercise backpressure, and
+injecting errors (--fail-rate) to exercise upstream timeout and passive
+down-marking behavior.
 """
 
 import argparse
@@ -18,17 +20,21 @@ class Handler(BaseHTTPRequestHandler):
     fail_rate = 0.0
 
     def do_GET(self):
+        self._respond(f"{self.name}\n".encode("utf-8"))
+
+    def do_POST(self):
+        length = int(self.headers.get("Content-Length", "0"))
+        self._respond(self.rfile.read(length))
+
+    def _respond(self, body):
         if self.delay_ms > 0:
             time.sleep(self.delay_ms / 1000.0)
 
         if random.random() < self.fail_rate:
+            body = b"injected failure\n"
             self.send_response(500)
-            self.end_headers()
-            self.wfile.write(b"injected failure\n")
-            return
-
-        body = f"{self.name}\n".encode("utf-8")
-        self.send_response(200)
+        else:
+            self.send_response(200)
         self.send_header("Content-Type", "text/plain")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()

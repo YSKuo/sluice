@@ -6,44 +6,26 @@ on:
   pull_request:
 
 jobs:
-  debug-asan:
-    name: Debug + ASan/UBSan
+  check:
+    name: Format, clang-tidy, build, and test (both presets)
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
+      # Same Ubuntu release and LLVM 18 packages as .devcontainer/Dockerfile,
+      # so clang-format and clang-tidy results match local runs.
       - name: Install toolchain
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang cmake ninja-build
-      - name: Configure
-        run: cmake --preset debug-asan
-      - name: Build
-        run: cmake --build --preset debug-asan
-      - name: Test
-        run: ctest --preset debug-asan
+          sudo apt-get install -y --no-install-recommends \
+            ca-certificates clang clang-format clang-tidy cmake \
+            libclang-rt-18-dev ninja-build
+      - name: Run scripts/check.sh
+        run: ./scripts/check.sh
 
-  release:
-    name: Release build
+  devcontainer:
+    name: Devcontainer image builds
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - name: Install toolchain
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y clang cmake ninja-build
-      - name: Configure
-        run: cmake --preset release
-      - name: Build
-        run: cmake --build --preset release
-
-  clang-format:
-    name: Format check
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install clang-format
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y clang-format
-      - name: Check formatting
-        run: ./scripts/format.sh --check
+      - name: Build image
+        run: docker build -f .devcontainer/Dockerfile .

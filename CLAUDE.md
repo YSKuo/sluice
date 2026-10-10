@@ -76,6 +76,8 @@ looking at the code.
 
 ## Common commands
 
+Linux only (epoll); on macOS run these inside the devcontainer.
+
 ```sh
 # Build (debug, ASan/UBSan)
 cmake --preset debug-asan && cmake --build --preset debug-asan

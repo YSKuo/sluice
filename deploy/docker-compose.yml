@@ -1,9 +1,17 @@
+# Benchmark stack: sluice and Nginx side by side, in front of the same
+# three backends. Both gateways get the same CPU and memory limits so their
+# results are comparable ("matched conditions"); see bench/README.md.
+
+x-gateway-limits: &gateway-limits
+  cpus: "1"
+  mem_limit: 256m
+
 services:
   sluice:
+    <<: *gateway-limits
     build:
       context: ..
-      dockerfile: .devcontainer/Dockerfile
-    command: ["./build/release/sluice"]
+      dockerfile: deploy/sluice/Dockerfile
     ports:
       - "8080:8080"
     depends_on:
@@ -12,6 +20,7 @@ services:
       - backend-c
 
   nginx:
+    <<: *gateway-limits
     image: nginx:1.27
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro

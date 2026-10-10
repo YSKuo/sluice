@@ -1,0 +1,8 @@
+# Keep Docker build contexts small and reproducible: local build trees,
+# editor state, and VCS metadata never belong in an image.
+.git/
+build/
+build-*/
+.cache/
+.vscode/
+.DS_Store

@@ -21,6 +21,8 @@ Checks: >
 # via return values rather than exceptions, so this check mostly produces
 # false positives from noexcept inference rather than real bugs.
 
-WarningsAsErrors: ''
+# Every enabled check is treated as an error so scripts/check.sh (and CI)
+# fail on any finding instead of printing warnings nobody acts on.
+WarningsAsErrors: '*'
 HeaderFilterRegex: '^.*/(src|tests)/.*'
 FormatStyle: file

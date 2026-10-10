@@ -17,6 +17,10 @@ against Nginx under equivalent reverse-proxy configurations.
 - Both `sluice` and Nginx are benchmarked against the same three backend
   instances (see `deploy/backends/`), with equivalent routing and load
   balancing behavior (longest-prefix routing, round robin across backends).
+- Both gateways run from `deploy/docker-compose.yml` with identical CPU
+  (1 core) and memory limits, one worker each, Nginx's access log off, and
+  no upstream connection pooling on either side (`deploy/nginx/nginx.conf`
+  documents each matching choice).
 - Each run records: request rate, duration, p50/p90/p99/p99.9 latency, error
   count, and CPU/memory usage of the gateway process.
 - Hardware and OS details (CPU model, core count, RAM, kernel version, and

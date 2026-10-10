@@ -1,0 +1,5 @@
+# Point clangd at the compile database exported by the debug-asan preset
+# (CMAKE_EXPORT_COMPILE_COMMANDS writes it into the build tree, not the
+# repository root).
+CompileFlags:
+  CompilationDatabase: build/debug-asan

@@ -9,7 +9,7 @@
     {
       "name": "debug-asan",
       "displayName": "Debug + ASan/UBSan",
-      "description": "Day-to-day development build with AddressSanitizer and UndefinedBehaviorSanitizer enabled.",
+      "description": "Day-to-day development build with AddressSanitizer and UndefinedBehaviorSanitizer enabled. -fno-sanitize-recover=all makes any UBSan finding abort the process, so a test that triggers UB fails instead of only printing a warning.",
       "generator": "Ninja",
       "binaryDir": "${sourceDir}/build/debug-asan",
       "cacheVariables": {
@@ -17,7 +17,7 @@
         "CMAKE_C_COMPILER": "clang",
         "CMAKE_CXX_COMPILER": "clang++",
         "SLUICE_WERROR": "ON",
-        "CMAKE_CXX_FLAGS": "-fsanitize=address,undefined -fno-omit-frame-pointer",
+        "CMAKE_CXX_FLAGS": "-fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer",
         "CMAKE_EXE_LINKER_FLAGS": "-fsanitize=address,undefined"
       }
     },
@@ -51,6 +51,10 @@
       "configurePreset": "debug-asan",
       "output": {
         "outputOnFailure": true
+      },
+      "environment": {
+        "ASAN_OPTIONS": "detect_leaks=1:strict_string_checks=1:check_initialization_order=1",
+        "UBSAN_OPTIONS": "print_stacktrace=1:halt_on_error=1"
       }
     },
     {

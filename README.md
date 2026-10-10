@@ -23,6 +23,9 @@ now; see [Future work](#future-work) for why, and what would change first.
 
 ## Quick start
 
+sluice is built directly on Linux APIs (epoll, signalfd, accept4), so it
+builds and runs on Linux only. On macOS, use the devcontainer.
+
 ### Using the devcontainer (recommended)
 
 Open this folder in VS Code and reopen in the devcontainer, or build and run
@@ -43,8 +46,14 @@ cmake --build --preset debug-asan
 # Run the unit tests
 ctest --preset debug-asan --output-on-failure
 
-# Run the gateway binary
-./build/debug-asan/sluice --version
+# Run the Week 1 echo server (Ctrl-C to stop)
+./build/debug-asan/sluice --port 8080
+
+# In another shell: every line typed is echoed back
+nc 127.0.0.1 8080
+
+# Full pre-commit check: format, clang-tidy, both presets, tests
+./scripts/check.sh
 ```
 
 For an optimized build (used for benchmarking):
@@ -59,15 +68,16 @@ cmake --build --preset release
 
 | Week | Scope | Status |
 | --- | --- | --- |
-| Week 1 | Event loop + Socket RAII (echo server) | Not started |
+| Week 1 | Event loop + Socket RAII (echo server) | Done |
 | Week 2 | HTTP/1.1 parser + keep-alive + header limits | Not started |
 | Week 3 | Reverse proxy, backpressure, routing, round robin, timeouts | Not started |
 | Week 4 | Rate limiting, benchmark vs Nginx, ASan clean, design write-up | Not started |
 
 ## Design
 
-TBD — design notes and rationale will be added here as each milestone lands.
-See `docs/design/` for individual ADRs.
+Design notes and rationale are recorded as ADRs in `docs/design/`:
+
+- [ADR 0001: Event loop and connection lifecycle](docs/design/0001-event-loop.md)
 
 ## Benchmark
 

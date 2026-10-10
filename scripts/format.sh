@@ -2,11 +2,16 @@
 # Formats (or checks the formatting of) all project source files with
 # clang-format. Pass --check to verify formatting without modifying files
 # (used by CI); with no arguments, files are reformatted in place.
+# Written for bash 3.2 (macOS /bin/bash): no mapfile, no empty-array
+# expansion under `set -u`.
 set -euo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
-mapfile -t files < <(find src tests -type f \( -name '*.cpp' -o -name '*.h' -o -name '*.hpp' \))
+files=()
+while IFS= read -r file; do
+  files+=("${file}")
+done < <(find src tests -type f \( -name '*.cpp' -o -name '*.h' -o -name '*.hpp' \) | sort)
 
 if [[ ${#files[@]} -eq 0 ]]; then
   echo "No source files to format."

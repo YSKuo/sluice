@@ -14,5 +14,17 @@ indent_size = 2
 [*.{yml,yaml,json}]
 indent_size = 2
 
+[*.py]
+indent_size = 4
+
+[{CMakeLists.txt,*.cmake}]
+indent_size = 4
+
+[*.conf]
+indent_size = 4
+
+[{Dockerfile,*.Dockerfile}]
+indent_size = 4
+
 [Makefile]
 indent_style = tab
