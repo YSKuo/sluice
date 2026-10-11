@@ -1,4 +1,5 @@
-#pragma once
+#ifndef SLUICE_NET_TCP_CONNECTION_H_
+#define SLUICE_NET_TCP_CONNECTION_H_
 
 #include <cstddef>
 #include <cstdint>
@@ -8,12 +9,12 @@
 
 #include "net/buffer.h"
 #include "net/channel.h"
+#include "net/event_loop.h"
 #include "net/inet_address.h"
 #include "net/socket.h"
+#include "result.h"
 
 namespace sluice::net {
-
-class EventLoop;
 
 // One accepted TCP connection: owns the connected socket, its Channel, and
 // an input and an output Buffer.
@@ -29,30 +30,35 @@ class EventLoop;
 // inside one of this connection's own callbacks.
 class TcpConnection {
  public:
-  using MessageCallback = std::function<void(TcpConnection& conn, Buffer& input)>;
+  using MessageCallback =
+      std::function<void(TcpConnection& conn, Buffer& input)>;
   using WriteCompleteCallback = std::function<void(TcpConnection& conn)>;
   using CloseCallback = std::function<void(TcpConnection& conn)>;
 
   // Bytes requested from the kernel per read() call.
   static constexpr size_t kReadChunkSize = size_t{16} * 1024;
 
-  TcpConnection(EventLoop* loop, uint64_t id, Socket socket, const InetAddress& peer);
-  ~TcpConnection();
+  TcpConnection(EventLoop* loop, uint64_t id, Socket socket,
+                const InetAddress& peer);
 
   TcpConnection(const TcpConnection&) = delete;
   TcpConnection& operator=(const TcpConnection&) = delete;
   TcpConnection(TcpConnection&&) = delete;
   TcpConnection& operator=(TcpConnection&&) = delete;
 
+  ~TcpConnection();
+
   void SetMessageCallback(MessageCallback cb) { message_cb_ = std::move(cb); }
   // Runs when output that had to be queued has been fully flushed. It does
   // not run when Send() wrote everything immediately.
-  void SetWriteCompleteCallback(WriteCompleteCallback cb) { write_complete_cb_ = std::move(cb); }
+  void SetWriteCompleteCallback(WriteCompleteCallback cb) {
+    write_complete_cb_ = std::move(cb);
+  }
   void SetCloseCallback(CloseCallback cb) { close_cb_ = std::move(cb); }
 
-  // Registers for read events. Returns 0 or errno; on failure the caller
-  // should simply destroy the connection (no callbacks have run).
-  [[nodiscard]] int Start();
+  // Registers for read events. On failure the caller should simply destroy
+  // the connection (no callbacks have run).
+  [[nodiscard]] Result<void> Start();
 
   // Queues `data` for sending. Ignored once the connection is closed. A
   // write error closes the connection (and runs the CloseCallback) before
@@ -72,9 +78,13 @@ class TcpConnection {
 
   [[nodiscard]] uint64_t id() const noexcept { return id_; }
   [[nodiscard]] const InetAddress& peer() const noexcept { return peer_; }
-  [[nodiscard]] bool connected() const noexcept { return state_ == State::kConnected; }
+  [[nodiscard]] bool connected() const noexcept {
+    return state_ == State::kConnected;
+  }
   [[nodiscard]] bool reading() const noexcept { return channel_.IsReading(); }
-  [[nodiscard]] size_t PendingOutputBytes() const noexcept { return output_.ReadableBytes(); }
+  [[nodiscard]] size_t PendingOutputBytes() const noexcept {
+    return output_.ReadableBytes();
+  }
 
  private:
   enum class State : uint8_t {
@@ -86,7 +96,6 @@ class TcpConnection {
   void HandleRead();
   void HandleWrite();
   void HandleClose();
-  void HandleError();
   // Enters kDraining, or closes right away if nothing is left to flush.
   void BeginDrain();
 
@@ -106,3 +115,5 @@ class TcpConnection {
 };
 
 }  // namespace sluice::net
+
+#endif  // SLUICE_NET_TCP_CONNECTION_H_

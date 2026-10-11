@@ -1,4 +1,5 @@
-#pragma once
+#ifndef SLUICE_NET_EVENT_LOOP_H_
+#define SLUICE_NET_EVENT_LOOP_H_
 
 #include <sys/epoll.h>
 
@@ -7,11 +8,11 @@
 #include <memory>
 #include <vector>
 
+#include "net/channel.h"
 #include "net/unique_fd.h"
+#include "result.h"
 
 namespace sluice::net {
-
-class Channel;
 
 // Single-threaded epoll reactor. Waits for readiness events on registered
 // Channels and dispatches them to the Channels' callbacks, then runs any
@@ -34,15 +35,16 @@ class EventLoop {
     PassKey() = default;
   };
 
-  // Returns nullptr and sets `*error` to errno if the epoll instance cannot
-  // be created.
-  static std::unique_ptr<EventLoop> Create(int* error);
+  // Fails if the epoll instance cannot be created.
+  static Result<std::unique_ptr<EventLoop>> Create();
+
   EventLoop(PassKey key, UniqueFd epoll_fd);
 
   EventLoop(const EventLoop&) = delete;
   EventLoop& operator=(const EventLoop&) = delete;
   EventLoop(EventLoop&&) = delete;
   EventLoop& operator=(EventLoop&&) = delete;
+
   ~EventLoop() = default;
 
   // Runs PollOnce() until Quit() is called.
@@ -75,15 +77,17 @@ class EventLoop {
   }
 
   // Number of Channels currently registered with epoll.
-  [[nodiscard]] size_t registered_channel_count() const noexcept { return registered_count_; }
+  [[nodiscard]] size_t registered_channel_count() const noexcept {
+    return registered_count_;
+  }
 
  private:
   friend class Channel;
 
   // Synchronizes the epoll registration with the Channel's interest set.
-  // Returns 0, or errno if registering a new descriptor failed (ENOMEM,
-  // ENOSPC). Any other failure is a programming error and aborts.
-  int UpdateChannel(Channel* channel);
+  // Fails only if registering a new descriptor failed (ENOMEM, ENOSPC). Any
+  // other failure is a programming error and aborts.
+  Result<void> UpdateChannel(Channel* channel);
   void RemoveChannel(Channel* channel);
   void RunPendingTasks();
 
@@ -95,3 +99,5 @@ class EventLoop {
 };
 
 }  // namespace sluice::net
+
+#endif  // SLUICE_NET_EVENT_LOOP_H_

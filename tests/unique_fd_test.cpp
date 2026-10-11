@@ -1,12 +1,13 @@
 #include "net/unique_fd.h"
 
 #include <fcntl.h>
-#include <gtest/gtest.h>
 #include <unistd.h>
 
 #include <array>
 #include <cerrno>
 #include <utility>
+
+#include "gtest/gtest.h"
 
 namespace sluice::net {
 namespace {
@@ -42,7 +43,8 @@ TEST(UniqueFdTest, MoveTransfersOwnership) {
   const UniqueFd write_end(w);
   UniqueFd a(r);
   UniqueFd b(std::move(a));
-  EXPECT_FALSE(a.valid());  // NOLINT(bugprone-use-after-move): checking moved-from state.
+  EXPECT_FALSE(a.valid());  // NOLINT(bugprone-use-after-move): checking
+                            // moved-from state.
   EXPECT_EQ(b.get(), r);
 
   UniqueFd c;

@@ -1,3 +1,19 @@
 BasedOnStyle: Google
 Standard: c++20
-ColumnLimit: 100
+# Google style's include order: related header, C system headers, C++
+# standard headers, other libraries' headers, then this project's headers,
+# each group separated by a blank line. The default Google categories cannot
+# tell GoogleTest ("gtest/...", included with quotes as Google does) apart
+# from project headers, so it gets its own category here.
+IncludeBlocks: Regroup
+IncludeCategories:
+  - Regex: '^<ext/.*\.h>'
+    Priority: 2
+  - Regex: '^<.*\.h>'
+    Priority: 1
+  - Regex: '^<.*'
+    Priority: 2
+  - Regex: '^"(gtest|gmock)/'
+    Priority: 3
+  - Regex: '.*'
+    Priority: 4

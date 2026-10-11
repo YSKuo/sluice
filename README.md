@@ -78,6 +78,7 @@ cmake --build --preset release
 Design notes and rationale are recorded as ADRs in `docs/design/`:
 
 - [ADR 0001: Event loop and connection lifecycle](docs/design/0001-event-loop.md)
+- [ADR 0002: Google C++ style and error handling](docs/design/0002-google-style-and-errors.md)
 
 ## Benchmark
 

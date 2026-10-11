@@ -1,26 +1,26 @@
 #include "net/tcp_connection.h"
 
-#include <cerrno>
+#include <span>
+#include <utility>
 
 namespace sluice::net {
 
-namespace {
-
-bool WouldBlock(int err) { return err == EAGAIN || err == EWOULDBLOCK; }
-
-}  // namespace
-
-TcpConnection::TcpConnection(EventLoop* loop, uint64_t id, Socket socket, const InetAddress& peer)
-    : id_(id), peer_(peer), socket_(std::move(socket)), channel_(loop, socket_.fd()) {
+TcpConnection::TcpConnection(EventLoop* loop, uint64_t id, Socket socket,
+                             const InetAddress& peer)
+    : id_(id),
+      peer_(peer),
+      socket_(std::move(socket)),
+      channel_(loop, socket_.fd()) {
   channel_.SetReadCallback([this] { HandleRead(); });
   channel_.SetWriteCallback([this] { HandleWrite(); });
   channel_.SetCloseCallback([this] { HandleClose(); });
-  channel_.SetErrorCallback([this] { HandleError(); });
+  // EPOLLERR: the socket is unusable, whatever the pending error is.
+  channel_.SetErrorCallback([this] { HandleClose(); });
 }
 
 TcpConnection::~TcpConnection() { channel_.Remove(); }
 
-int TcpConnection::Start() { return channel_.EnableReading(); }
+Result<void> TcpConnection::Start() { return channel_.EnableReading(); }
 
 void TcpConnection::Send(std::string_view data) {
   if (state_ == State::kClosed) {
@@ -31,10 +31,10 @@ void TcpConnection::Send(std::string_view data) {
   // Only write directly when nothing is queued; otherwise the new bytes
   // would overtake the queued ones.
   if (!channel_.IsWriting() && output_.empty()) {
-    const IoResult result = socket_.Write(data);
-    if (result.error == 0) {
-      written = result.bytes;
-    } else if (!WouldBlock(result.error)) {
+    const Result<size_t> result = socket_.Write(data);
+    if (result) {
+      written = *result;
+    } else if (!IsWouldBlock(result.error())) {
       // EPIPE, ECONNRESET, ...: the peer is gone.
       HandleClose();
       return;
@@ -45,7 +45,7 @@ void TcpConnection::Send(std::string_view data) {
     return;
   }
   output_.Append(data.substr(written));
-  if (!channel_.IsWriting() && channel_.EnableWriting() != 0) {
+  if (!channel_.IsWriting() && !channel_.EnableWriting()) {
     HandleClose();
   }
 }
@@ -57,7 +57,8 @@ void TcpConnection::PauseReading() {
 }
 
 void TcpConnection::ResumeReading() {
-  if (state_ == State::kConnected && !channel_.IsReading() && channel_.EnableReading() != 0) {
+  if (state_ == State::kConnected && !channel_.IsReading() &&
+      !channel_.EnableReading()) {
     HandleClose();
   }
 }
@@ -71,35 +72,35 @@ void TcpConnection::Shutdown() {
 void TcpConnection::ForceClose() { HandleClose(); }
 
 void TcpConnection::HandleRead() {
-  std::span<char> space = input_.PrepareWrite(kReadChunkSize);
-  const IoResult result = socket_.Read(space);
-  if (result.error != 0) {
-    if (!WouldBlock(result.error)) {
+  const std::span<char> space = input_.PrepareWrite(kReadChunkSize);
+  const Result<size_t> result = socket_.Read(space);
+  if (!result) {
+    if (!IsWouldBlock(result.error())) {
       HandleClose();  // ECONNRESET, ...
     }
     return;
   }
-  if (result.bytes == 0) {
+  if (*result == 0) {
     // The peer finished sending (EOF). Flush whatever we still owe it,
     // then close.
     BeginDrain();
     return;
   }
-  input_.CommitWrite(result.bytes);
+  input_.CommitWrite(*result);
   if (message_cb_) {
     message_cb_(*this, input_);
   }
 }
 
 void TcpConnection::HandleWrite() {
-  const IoResult result = socket_.Write(output_.Peek());
-  if (result.error != 0) {
-    if (!WouldBlock(result.error)) {
+  const Result<size_t> result = socket_.Write(output_.Peek());
+  if (!result) {
+    if (!IsWouldBlock(result.error())) {
       HandleClose();
     }
     return;
   }
-  output_.Retrieve(result.bytes);
+  output_.Retrieve(*result);
   if (!output_.empty()) {
     return;  // Still more to flush; wait for the next EPOLLOUT.
   }
@@ -128,13 +129,6 @@ void TcpConnection::HandleClose() {
   if (close_cb_) {
     close_cb_(*this);
   }
-}
-
-void TcpConnection::HandleError() {
-  // Consume SO_ERROR so it does not linger; the connection is unusable
-  // either way.
-  static_cast<void>(socket_.TakeError());
-  HandleClose();
 }
 
 void TcpConnection::BeginDrain() {

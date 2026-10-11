@@ -3,6 +3,7 @@
 #include <arpa/inet.h>
 
 #include <array>
+#include <format>
 
 namespace sluice::net {
 
@@ -18,9 +19,8 @@ sockaddr_in MakeSockaddr(uint32_t ip_host_order, uint16_t port) {
 
 }  // namespace
 
-InetAddress::InetAddress() noexcept : addr_(MakeSockaddr(INADDR_ANY, 0)) {}
-
-std::optional<InetAddress> InetAddress::FromIpPort(std::string_view ip, uint16_t port) {
+std::optional<InetAddress> InetAddress::FromIpPort(std::string_view ip,
+                                                   uint16_t port) {
   // inet_pton needs a NUL-terminated string.
   const std::string ip_str(ip);
   sockaddr_in addr = MakeSockaddr(INADDR_ANY, port);
@@ -30,11 +30,15 @@ std::optional<InetAddress> InetAddress::FromIpPort(std::string_view ip, uint16_t
   return InetAddress(addr);
 }
 
-InetAddress InetAddress::Any(uint16_t port) { return InetAddress(MakeSockaddr(INADDR_ANY, port)); }
+InetAddress InetAddress::Any(uint16_t port) {
+  return InetAddress(MakeSockaddr(INADDR_ANY, port));
+}
 
 InetAddress InetAddress::Loopback(uint16_t port) {
   return InetAddress(MakeSockaddr(INADDR_LOOPBACK, port));
 }
+
+InetAddress::InetAddress() noexcept : addr_(MakeSockaddr(INADDR_ANY, 0)) {}
 
 uint16_t InetAddress::port() const noexcept { return ntohs(addr_.sin_port); }
 
@@ -42,7 +46,7 @@ std::string InetAddress::ToString() const {
   std::array<char, INET_ADDRSTRLEN> ip{};
   // Cannot fail: the family is always AF_INET and the buffer is large enough.
   ::inet_ntop(AF_INET, &addr_.sin_addr, ip.data(), ip.size());
-  return std::string(ip.data()) + ":" + std::to_string(port());
+  return std::format("{}:{}", ip.data(), port());
 }
 
 const sockaddr* InetAddress::sockaddr_ptr() const noexcept {

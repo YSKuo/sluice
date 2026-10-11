@@ -1,27 +1,33 @@
 #include "net/event_loop.h"
 
-#include <gtest/gtest.h>
 #include <sys/eventfd.h>
 #include <unistd.h>
 
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
+
+#include "gtest/gtest.h"
 
 #include "net/channel.h"
 #include "net/unique_fd.h"
+#include "result.h"
 
 namespace sluice::net {
 namespace {
 
 // An eventfd is the simplest pollable descriptor: readable while its
 // counter is non-zero, and always writable.
-UniqueFd MakeEventFd() { return UniqueFd(::eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC)); }
+UniqueFd MakeEventFd() {
+  return UniqueFd(::eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC));
+}
 
 void Signal(const UniqueFd& fd) {
   const uint64_t one = 1;
-  ASSERT_EQ(::write(fd.get(), &one, sizeof(one)), static_cast<ssize_t>(sizeof(one)));
+  ASSERT_EQ(::write(fd.get(), &one, sizeof(one)),
+            static_cast<ssize_t>(sizeof(one)));
 }
 
 void Drain(const UniqueFd& fd) {
@@ -32,9 +38,9 @@ void Drain(const UniqueFd& fd) {
 class EventLoopTest : public ::testing::Test {
  protected:
   void SetUp() override {
-    int err = 0;
-    loop_ = EventLoop::Create(&err);
-    ASSERT_NE(loop_, nullptr) << "epoll_create1 failed: " << err;
+    Result<std::unique_ptr<EventLoop>> loop = EventLoop::Create();
+    ASSERT_TRUE(loop.has_value()) << loop.error().message();
+    loop_ = *std::move(loop);
   }
 
   std::unique_ptr<EventLoop> loop_;
@@ -44,11 +50,11 @@ TEST_F(EventLoopTest, DispatchesReadEvent) {
   const UniqueFd efd = MakeEventFd();
   Channel channel(loop_.get(), efd.get());
   int calls = 0;
-  channel.SetReadCallback([&] {
+  channel.SetReadCallback([&calls, &efd] {
     ++calls;
     Drain(efd);
   });
-  ASSERT_EQ(channel.EnableReading(), 0);
+  ASSERT_TRUE(channel.EnableReading());
 
   EXPECT_EQ(loop_->PollOnce(0), 0);  // Not readable yet.
   Signal(efd);
@@ -63,8 +69,9 @@ TEST_F(EventLoopTest, LevelTriggeredRepeatsUntilDrained) {
   const UniqueFd efd = MakeEventFd();
   Channel channel(loop_.get(), efd.get());
   int calls = 0;
-  channel.SetReadCallback([&] { ++calls; });  // Deliberately does not drain.
-  ASSERT_EQ(channel.EnableReading(), 0);
+  channel.SetReadCallback(
+      [&calls] { ++calls; });  // Deliberately does not drain.
+  ASSERT_TRUE(channel.EnableReading());
 
   Signal(efd);
   loop_->PollOnce(0);
@@ -79,8 +86,8 @@ TEST_F(EventLoopTest, DispatchesWriteEvent) {
   const UniqueFd efd = MakeEventFd();
   Channel channel(loop_.get(), efd.get());
   int calls = 0;
-  channel.SetWriteCallback([&] { ++calls; });
-  ASSERT_EQ(channel.EnableWriting(), 0);
+  channel.SetWriteCallback([&calls] { ++calls; });
+  ASSERT_TRUE(channel.EnableWriting());
 
   loop_->PollOnce(0);
   EXPECT_EQ(calls, 1);
@@ -93,7 +100,7 @@ TEST_F(EventLoopTest, DispatchesWriteEvent) {
 TEST_F(EventLoopTest, EmptyInterestSetUnregisters) {
   const UniqueFd efd = MakeEventFd();
   Channel channel(loop_.get(), efd.get());
-  ASSERT_EQ(channel.EnableReading(), 0);
+  ASSERT_TRUE(channel.EnableReading());
   EXPECT_TRUE(channel.registered());
   EXPECT_EQ(loop_->registered_channel_count(), 1U);
 
@@ -102,7 +109,7 @@ TEST_F(EventLoopTest, EmptyInterestSetUnregisters) {
   EXPECT_EQ(loop_->registered_channel_count(), 0U);
 
   // Re-enabling registers again.
-  ASSERT_EQ(channel.EnableReading(), 0);
+  ASSERT_TRUE(channel.EnableReading());
   EXPECT_TRUE(channel.registered());
   channel.Remove();
   channel.Remove();  // Idempotent.
@@ -118,16 +125,16 @@ TEST_F(EventLoopTest, ChannelRemovedEarlierInBatchIsSkipped) {
   Channel a(loop_.get(), a_fd.get());
   Channel b(loop_.get(), b_fd.get());
   int calls = 0;
-  a.SetReadCallback([&] {
+  a.SetReadCallback([&calls, &b] {
     ++calls;
     b.Remove();
   });
-  b.SetReadCallback([&] {
+  b.SetReadCallback([&calls, &a] {
     ++calls;
     a.Remove();
   });
-  ASSERT_EQ(a.EnableReading(), 0);
-  ASSERT_EQ(b.EnableReading(), 0);
+  ASSERT_TRUE(a.EnableReading());
+  ASSERT_TRUE(b.EnableReading());
   Signal(a_fd);
   Signal(b_fd);
 
@@ -142,12 +149,12 @@ TEST_F(EventLoopTest, QueuedTasksRunAfterDispatch) {
   const UniqueFd efd = MakeEventFd();
   Channel channel(loop_.get(), efd.get());
   std::vector<std::string> order;
-  channel.SetReadCallback([&] {
-    loop_->QueueInLoop([&] { order.emplace_back("task"); });
+  channel.SetReadCallback([this, &order, &efd] {
+    loop_->QueueInLoop([&order] { order.emplace_back("task"); });
     order.emplace_back("callback");
     Drain(efd);
   });
-  ASSERT_EQ(channel.EnableReading(), 0);
+  ASSERT_TRUE(channel.EnableReading());
   Signal(efd);
 
   loop_->PollOnce(0);
@@ -158,7 +165,7 @@ TEST_F(EventLoopTest, QueuedTasksRunAfterDispatch) {
 
 TEST_F(EventLoopTest, PendingTaskPreventsBlocking) {
   bool ran = false;
-  loop_->QueueInLoop([&] { ran = true; });
+  loop_->QueueInLoop([&ran] { ran = true; });
   // Would block forever if pending tasks did not force a zero timeout.
   loop_->PollOnce(-1);
   EXPECT_TRUE(ran);
@@ -167,11 +174,11 @@ TEST_F(EventLoopTest, PendingTaskPreventsBlocking) {
 TEST_F(EventLoopTest, QuitStopsLoop) {
   const UniqueFd efd = MakeEventFd();
   Channel channel(loop_.get(), efd.get());
-  channel.SetReadCallback([&] {
+  channel.SetReadCallback([this, &efd] {
     Drain(efd);
     loop_->Quit();
   });
-  ASSERT_EQ(channel.EnableReading(), 0);
+  ASSERT_TRUE(channel.EnableReading());
   Signal(efd);
 
   loop_->Loop();  // Returns only because the callback called Quit().

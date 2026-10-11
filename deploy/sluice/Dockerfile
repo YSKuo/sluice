@@ -6,7 +6,7 @@ FROM ubuntu:24.04 AS build
 ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    clang \
+    clang-18 \
     cmake \
     ninja-build \
     && rm -rf /var/lib/apt/lists/*

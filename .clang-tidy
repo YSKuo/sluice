@@ -1,10 +1,12 @@
-# Keep the rule set small and high-signal: only bugprone-* and performance-*
-# checks, plus a handful of modernize-* checks for C++20 idioms. Every
-# disabled check below is listed individually with the reason it is off,
-# so the exclusion list stays auditable instead of growing silently.
+# Keep the rule set small and high-signal: bugprone-*, performance-*, and
+# google-* (the clang-tidy encoding of the Google C++ Style Guide), plus a
+# handful of modernize-* checks for current C++ idioms. Every disabled check
+# below is listed individually with the reason it is off, so the exclusion
+# list stays auditable instead of growing silently.
 Checks: >
   -*,
   bugprone-*,
+  google-*,
   performance-*,
   modernize-use-override,
   modernize-use-nullptr,

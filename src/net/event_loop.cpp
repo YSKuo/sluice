@@ -6,8 +6,6 @@
 #include <cstring>
 #include <utility>
 
-#include "net/channel.h"
-
 namespace sluice::net {
 
 namespace {
@@ -21,13 +19,11 @@ constexpr size_t kInitialEventCapacity = 64;
 
 }  // namespace
 
-std::unique_ptr<EventLoop> EventLoop::Create(int* error) {
+Result<std::unique_ptr<EventLoop>> EventLoop::Create() {
   UniqueFd epoll_fd(::epoll_create1(EPOLL_CLOEXEC));
   if (!epoll_fd.valid()) {
-    *error = errno;
-    return nullptr;
+    return LastErrnoError();
   }
-  *error = 0;
   return std::make_unique<EventLoop>(PassKey(), std::move(epoll_fd));
 }
 
@@ -45,7 +41,8 @@ void EventLoop::Loop() {
 int EventLoop::PollOnce(int timeout_ms) {
   // Never block while tasks are waiting to run.
   const int timeout = pending_tasks_.empty() ? timeout_ms : 0;
-  int n = ::epoll_wait(epoll_fd_.get(), events_.data(), static_cast<int>(events_.size()), timeout);
+  int n = ::epoll_wait(epoll_fd_.get(), events_.data(),
+                       static_cast<int>(events_.size()), timeout);
   if (n < 0) {
     if (errno != EINTR) {
       // EBADF, EFAULT, EINVAL: all indicate a bug in this class.
@@ -76,27 +73,29 @@ int EventLoop::PollOnce(int timeout_ms) {
   return n;
 }
 
-void EventLoop::QueueInLoop(Task task) { pending_tasks_.push_back(std::move(task)); }
+void EventLoop::QueueInLoop(Task task) {
+  pending_tasks_.push_back(std::move(task));
+}
 
-int EventLoop::UpdateChannel(Channel* channel) {
+Result<void> EventLoop::UpdateChannel(Channel* channel) {
   epoll_event ev{};
   ev.events = channel->events();
   ev.data.ptr = channel;
 
   if (!channel->registered()) {
     if (channel->events() == 0) {
-      return 0;
+      return {};
     }
     if (::epoll_ctl(epoll_fd_.get(), EPOLL_CTL_ADD, channel->fd(), &ev) != 0) {
       const int err = errno;
       if (err == ENOMEM || err == ENOSPC) {
-        return err;
+        return ErrnoError(err);
       }
       FatalErrno("epoll_ctl(ADD)", err);
     }
     channel->registered_ = true;
     ++registered_count_;
-    return 0;
+    return {};
   }
 
   // Unregister instead of keeping an empty interest set: epoll always
@@ -104,19 +103,20 @@ int EventLoop::UpdateChannel(Channel* channel) {
   // for a channel that asked for nothing.
   if (channel->events() == 0) {
     RemoveChannel(channel);
-    return 0;
+    return {};
   }
   if (::epoll_ctl(epoll_fd_.get(), EPOLL_CTL_MOD, channel->fd(), &ev) != 0) {
     FatalErrno("epoll_ctl(MOD)", errno);
   }
-  return 0;
+  return {};
 }
 
 void EventLoop::RemoveChannel(Channel* channel) {
   if (!channel->registered()) {
     return;
   }
-  if (::epoll_ctl(epoll_fd_.get(), EPOLL_CTL_DEL, channel->fd(), nullptr) != 0) {
+  if (::epoll_ctl(epoll_fd_.get(), EPOLL_CTL_DEL, channel->fd(), nullptr) !=
+      0) {
     FatalErrno("epoll_ctl(DEL)", errno);
   }
   channel->registered_ = false;

@@ -20,6 +20,7 @@ add_executable(sluice_tests
     echo_server_test.cpp
     event_loop_test.cpp
     inet_address_test.cpp
+    result_test.cpp
     smoke_test.cpp
     unique_fd_test.cpp
 )

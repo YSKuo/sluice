@@ -2,11 +2,13 @@
 #include <sys/signalfd.h>
 #include <unistd.h>
 
-#include <cerrno>
 #include <charconv>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <memory>
+#include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 
@@ -15,6 +17,7 @@
 #include "net/event_loop.h"
 #include "net/inet_address.h"
 #include "net/unique_fd.h"
+#include "result.h"
 #include "version.h"
 
 namespace {
@@ -34,40 +37,53 @@ void PrintUsage() {
       "0.0.0.0:8080). Stop it with Ctrl-C or SIGTERM.\n");
 }
 
-bool ParsePort(std::string_view text, uint16_t* port) {
-  const char* end = text.data() + text.size();
-  const auto [ptr, ec] = std::from_chars(text.data(), end, *port);
-  return ec == std::errc() && ptr == end;
+// Parses a whole string as a TCP port; trailing characters are rejected.
+std::optional<uint16_t> ParsePort(std::string_view text) {
+  const char* const first = text.data();
+  const char* const last = first + text.size();
+  uint16_t port = 0;
+  const auto [ptr, ec] = std::from_chars(first, last, port);
+  if (ec != std::errc() || ptr != last) {
+    return std::nullopt;
+  }
+  return port;
 }
 
-// Returns false (after printing why) on invalid arguments.
-bool ParseArgs(int argc, char** argv, Options* options) {
-  for (int i = 1; i < argc; ++i) {
-    const std::string_view arg = argv[i];
-    const bool has_value = i + 1 < argc;
+// Returns nullopt (after printing why) on invalid arguments. `args` is the
+// full argv, including the program name.
+std::optional<Options> ParseArgs(std::span<char* const> args) {
+  Options options;
+  for (size_t i = 1; i < args.size(); ++i) {
+    const std::string_view arg = args[i];
+    const bool has_value = i + 1 < args.size();
     if (arg == "--version") {
-      options->show_version = true;
+      options.show_version = true;
     } else if (arg == "--help" || arg == "-h") {
-      options->show_help = true;
+      options.show_help = true;
     } else if (arg == "--host" && has_value) {
-      options->host = argv[++i];
+      options.host = args[++i];
     } else if (arg == "--port" && has_value) {
-      if (!ParsePort(argv[++i], &options->port)) {
-        std::fprintf(stderr, "sluice: invalid port '%s'\n", argv[i]);
-        return false;
+      const std::string_view value = args[++i];
+      const std::optional<uint16_t> port = ParsePort(value);
+      if (!port) {
+        std::fprintf(stderr, "sluice: invalid port '%s'\n",
+                     std::string(value).c_str());
+        return std::nullopt;
       }
+      options.port = *port;
     } else {
-      std::fprintf(stderr, "sluice: unknown or incomplete argument '%s'\n", argv[i]);
-      return false;
+      std::fprintf(stderr, "sluice: unknown or incomplete argument '%s'\n",
+                   std::string(arg).c_str());
+      return std::nullopt;
     }
   }
-  return true;
+  return options;
 }
 
 // Delivers SIGINT/SIGTERM through a signalfd so they arrive as ordinary
 // readable events on the loop: no async-signal-safety constraints, and no
-// EINTR racing with epoll_wait(). Returns an invalid fd on failure.
-sluice::net::UniqueFd CreateShutdownSignalFd() {
+// EINTR racing with epoll_wait().
+sluice::Result<sluice::net::UniqueFd> CreateShutdownSignalFd() {
   sigset_t mask;
   sigemptyset(&mask);
   sigaddset(&mask, SIGINT);
@@ -75,81 +91,98 @@ sluice::net::UniqueFd CreateShutdownSignalFd() {
   // The signals must be blocked, or their default action (terminate) would
   // run before the signalfd ever becomes readable.
   if (sigprocmask(SIG_BLOCK, &mask, nullptr) != 0) {
-    return sluice::net::UniqueFd();
+    return sluice::LastErrnoError();
   }
-  return sluice::net::UniqueFd(signalfd(-1, &mask, SFD_NONBLOCK | SFD_CLOEXEC));
+  sluice::net::UniqueFd fd(signalfd(-1, &mask, SFD_NONBLOCK | SFD_CLOEXEC));
+  if (!fd.valid()) {
+    return sluice::LastErrnoError();
+  }
+  return fd;
 }
 
 }  // namespace
 
 int main(int argc, char** argv) {
-  Options options;
-  if (!ParseArgs(argc, argv, &options)) {
+  const std::optional<Options> options =
+      ParseArgs(std::span(argv, static_cast<size_t>(argc)));
+  if (!options) {
     PrintUsage();
     return 2;
   }
-  if (options.show_help) {
+  if (options->show_help) {
     PrintUsage();
     return 0;
   }
-  if (options.show_version) {
+  if (options->show_version) {
     std::printf("sluice %s\n", std::string(sluice::GetVersion()).c_str());
     return 0;
   }
 
-  const auto listen_addr = sluice::net::InetAddress::FromIpPort(options.host, options.port);
+  const std::optional<sluice::net::InetAddress> listen_addr =
+      sluice::net::InetAddress::FromIpPort(options->host, options->port);
   if (!listen_addr) {
-    std::fprintf(stderr, "sluice: invalid IPv4 address '%s'\n", std::string(options.host).c_str());
+    std::fprintf(stderr, "sluice: invalid IPv4 address '%s'\n",
+                 std::string(options->host).c_str());
     return 2;
   }
 
-  int err = 0;
-  auto loop = sluice::net::EventLoop::Create(&err);
+  sluice::Result<std::unique_ptr<sluice::net::EventLoop>> loop =
+      sluice::net::EventLoop::Create();
   if (!loop) {
-    std::fprintf(stderr, "sluice: epoll_create1: %s\n", std::strerror(err));
+    std::fprintf(stderr, "sluice: epoll_create1: %s\n",
+                 loop.error().message().c_str());
     return 1;
   }
+  sluice::net::EventLoop& event_loop = **loop;
 
-  sluice::net::UniqueFd signal_fd = CreateShutdownSignalFd();
-  if (!signal_fd.valid()) {
-    std::fprintf(stderr, "sluice: signalfd: %s\n", std::strerror(errno));
+  sluice::Result<sluice::net::UniqueFd> signal_fd = CreateShutdownSignalFd();
+  if (!signal_fd) {
+    std::fprintf(stderr, "sluice: signalfd: %s\n",
+                 signal_fd.error().message().c_str());
     return 1;
   }
-  sluice::net::Channel signal_channel(loop.get(), signal_fd.get());
-  signal_channel.SetReadCallback([&] {
+  const int signal_fd_num = signal_fd->get();
+  sluice::net::Channel signal_channel(&event_loop, signal_fd_num);
+  signal_channel.SetReadCallback([signal_fd_num, &event_loop] {
     signalfd_siginfo info{};
     // Draining the signalfd is not strictly needed since we quit anyway,
     // but it keeps the descriptor from staying readable.
-    static_cast<void>(read(signal_fd.get(), &info, sizeof(info)));
+    static_cast<void>(read(signal_fd_num, &info, sizeof(info)));
     std::fprintf(stderr, "sluice: received %s, shutting down\n",
                  strsignal(static_cast<int>(info.ssi_signo)));
-    loop->Quit();
+    event_loop.Quit();
   });
-  err = signal_channel.EnableReading();
-  if (err != 0) {
-    std::fprintf(stderr, "sluice: epoll_ctl: %s\n", std::strerror(err));
+  if (sluice::Result<void> r = signal_channel.EnableReading(); !r) {
+    std::fprintf(stderr, "sluice: epoll_ctl: %s\n",
+                 r.error().message().c_str());
     return 1;
   }
 
-  auto server = sluice::echo::EchoServer::Create(loop.get(), *listen_addr, &err);
+  sluice::Result<std::unique_ptr<sluice::echo::EchoServer>> server =
+      sluice::echo::EchoServer::Create(&event_loop, *listen_addr);
+  sluice::Result<void> started;
   if (server) {
-    err = server->Start();
+    started = (*server)->Start();
+  } else {
+    started = sluice::Error(server.error());
   }
-  if (err != 0) {
-    std::fprintf(stderr, "sluice: cannot listen on %s: %s\n", listen_addr->ToString().c_str(),
-                 std::strerror(err));
+  if (!started) {
+    std::fprintf(stderr, "sluice: cannot listen on %s: %s\n",
+                 listen_addr->ToString().c_str(),
+                 started.error().message().c_str());
     // A Channel must be unregistered before it is destroyed.
     signal_channel.Remove();
     return 1;
   }
 
   std::fprintf(stderr, "sluice %s: echo server listening on %s\n",
-               std::string(sluice::GetVersion()).c_str(), listen_addr->ToString().c_str());
-  loop->Loop();
+               std::string(sluice::GetVersion()).c_str(),
+               listen_addr->ToString().c_str());
+  event_loop.Loop();
 
   // Tear down in reverse order of registration; the loop is destroyed last
   // (it was declared first).
-  server.reset();
+  server->reset();
   signal_channel.Remove();
   return 0;
 }

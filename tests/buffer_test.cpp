@@ -1,10 +1,10 @@
 #include "net/buffer.h"
 
-#include <gtest/gtest.h>
-
 #include <cstring>
 #include <span>
 #include <string>
+
+#include "gtest/gtest.h"
 
 namespace sluice::net {
 namespace {

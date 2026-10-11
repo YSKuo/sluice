@@ -1,24 +1,31 @@
-#pragma once
+#ifndef SLUICE_NET_ACCEPTOR_H_
+#define SLUICE_NET_ACCEPTOR_H_
 
 #include <functional>
 #include <memory>
 #include <utility>
 
 #include "net/channel.h"
+#include "net/event_loop.h"
 #include "net/inet_address.h"
 #include "net/socket.h"
 #include "net/unique_fd.h"
+#include "result.h"
 
 namespace sluice::net {
-
-class EventLoop;
 
 // Owns the listening socket. When the loop reports it readable, accepts
 // pending connections and hands each new connected Socket to the
 // NewConnectionCallback, which takes ownership of it.
 class Acceptor {
  public:
-  using NewConnectionCallback = std::function<void(Socket socket, const InetAddress& peer)>;
+  using NewConnectionCallback =
+      std::function<void(Socket socket, const InetAddress& peer)>;
+
+  class PassKey {
+    friend class Acceptor;
+    PassKey() = default;
+  };
 
   // Listen backlog passed to listen(2); the kernel caps it at somaxconn.
   static constexpr int kBacklog = 1024;
@@ -27,30 +34,31 @@ class Acceptor {
   // picked up on the next iteration (epoll is level-triggered).
   static constexpr int kMaxAcceptsPerEvent = 64;
 
-  class PassKey {
-    friend class Acceptor;
-    PassKey() = default;
-  };
-
   // Creates a socket bound to `listen_addr` (SO_REUSEADDR set) but does not
-  // listen yet. Returns nullptr and sets `*error` to errno on failure.
-  static std::unique_ptr<Acceptor> Create(EventLoop* loop, const InetAddress& listen_addr,
-                                          int* error);
+  // listen yet.
+  static Result<std::unique_ptr<Acceptor>> Create(
+      EventLoop* loop, const InetAddress& listen_addr);
+
   Acceptor(PassKey key, EventLoop* loop, Socket socket, UniqueFd idle_fd);
-  ~Acceptor();
 
   Acceptor(const Acceptor&) = delete;
   Acceptor& operator=(const Acceptor&) = delete;
   Acceptor(Acceptor&&) = delete;
   Acceptor& operator=(Acceptor&&) = delete;
 
-  void SetNewConnectionCallback(NewConnectionCallback cb) { new_connection_cb_ = std::move(cb); }
+  ~Acceptor();
 
-  // Starts listening and registers for read events. Returns 0 or errno.
-  [[nodiscard]] int Listen();
+  void SetNewConnectionCallback(NewConnectionCallback cb) {
+    new_connection_cb_ = std::move(cb);
+  }
+
+  // Starts listening and registers for read events.
+  [[nodiscard]] Result<void> Listen();
 
   // Bound address; differs from the requested one when port 0 was used.
-  [[nodiscard]] InetAddress LocalAddress(int* error) const { return socket_.LocalAddress(error); }
+  [[nodiscard]] Result<InetAddress> LocalAddress() const {
+    return socket_.LocalAddress();
+  }
 
  private:
   void HandleRead();
@@ -67,3 +75,5 @@ class Acceptor {
 };
 
 }  // namespace sluice::net
+
+#endif  // SLUICE_NET_ACCEPTOR_H_

@@ -1,7 +1,6 @@
 #include "net/buffer.h"
 
 #include <algorithm>
-#include <cstring>
 
 namespace sluice::net {
 
@@ -32,18 +31,15 @@ std::string Buffer::RetrieveAllAsString() {
 
 void Buffer::Append(std::string_view data) {
   if (data.empty()) {
-    // An empty, never-grown buffer has a null data pointer, and passing
-    // null to memcpy is undefined even for a length of zero.
     return;
   }
-  std::span<char> space = PrepareWrite(data.size());
-  std::memcpy(space.data(), data.data(), data.size());
+  std::ranges::copy(data, PrepareWrite(data.size()).begin());
   CommitWrite(data.size());
 }
 
 std::span<char> Buffer::PrepareWrite(size_t min_bytes) {
   EnsureWritable(min_bytes);
-  return {data_.data() + write_index_, data_.size() - write_index_};
+  return std::span(data_).subspan(write_index_);
 }
 
 void Buffer::CommitWrite(size_t n) noexcept {
@@ -55,12 +51,14 @@ void Buffer::EnsureWritable(size_t n) {
   if (writable >= n) {
     return;
   }
-  const size_t readable = ReadableBytes();
   if (read_index_ + writable >= n) {
-    // Enough total space once the consumed prefix is reclaimed.
-    std::memmove(data_.data(), data_.data() + read_index_, readable);
+    // Enough total space once the consumed prefix is reclaimed. Copying
+    // down to a lower address is safe for overlapping ranges.
+    const auto readable =
+        std::span(data_).subspan(read_index_, ReadableBytes());
+    std::ranges::copy(readable, data_.begin());
+    write_index_ = readable.size();
     read_index_ = 0;
-    write_index_ = readable;
     return;
   }
   data_.resize(write_index_ + n);

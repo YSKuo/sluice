@@ -50,10 +50,10 @@ Considered for each sub-decision:
   pointer in the batch can dangle.
 - **`signalfd` for SIGINT/SIGTERM.** Signals become ordinary readable
   events: no async-signal-safety rules, no `EINTR` race with `epoll_wait`.
-- **Error reporting by return value.** Syscall wrappers return `0` or the
-  `errno` value; factories return `nullptr` plus an `int* error`. Failures
-  that can only mean a bug (`EBADF` from `epoll_ctl`, destroying a still-
-  registered `Channel`) abort immediately with a message.
+- **Error reporting by return value.** Syscall wrappers and factories
+  return `Result<T>` (a value or a `std::error_code`; see ADR 0002).
+  Failures that can only mean a bug (`EBADF` from `epoll_ctl`, destroying a
+  still-registered `Channel`) abort immediately with a message.
 - **Backpressure in the echo server.** When a connection's queued output
   exceeds a high-water mark (1 MiB by default), reading from it pauses until
   the output is fully flushed, bounding per-connection memory.

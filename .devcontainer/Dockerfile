@@ -2,18 +2,19 @@ FROM ubuntu:24.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Ubuntu 24.04 pins this toolchain to LLVM 18; CI installs the same package
-# set so clang-format/clang-tidy results match between local and CI runs.
+# The toolchain is pinned to LLVM 18 (Ubuntu 24.04's default) by package
+# name; CI installs the same packages so clang-format/clang-tidy results
+# match between local and CI runs.
 # ca-certificates: needed for HTTPS git clones (wrk2, GoogleTest FetchContent).
 # libclang-rt-18-dev: ASan/UBSan runtimes, not pulled in without recommends.
 # libssl-dev: required to build wrk2.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     ca-certificates \
-    clang \
-    clang-format \
-    clang-tidy \
-    clangd \
+    clang-18 \
+    clang-format-18 \
+    clang-tidy-18 \
+    clangd-18 \
     cmake \
     curl \
     gdb \

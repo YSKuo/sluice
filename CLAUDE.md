@@ -66,11 +66,17 @@ looking at the code.
 
 ## Conventions
 
+- Follow the Google C++ Style Guide, targeting C++20 as the guide does (see
+  ADR 0002). `google-*` clang-tidy checks and `.clang-format` enforce most
+  of it; header guards and naming are on the author.
+- Errors are returned as `sluice::Result<T>` (defined in `src/result.h`, a
+  subset of C++23's `std::expected<T, std::error_code>`); no output
+  parameters.
 - Namespace: `sluice::<module>` (e.g. `sluice::net`, `sluice::http`,
   `sluice::proxy`).
 - RAII for all resources; no raw `new`/`delete`. Ownership is expressed with
   `unique_ptr`.
-- No exceptions on the hot path; errors are reported via return values.
+- No exceptions on the hot path; errors are reported via `Result<T>`.
 - Always use `steady_clock` for timing/timeouts, never `system_clock`.
 - File names use snake_case.
 

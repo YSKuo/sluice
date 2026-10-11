@@ -1,11 +1,16 @@
-#pragma once
+#ifndef SLUICE_NET_CHANNEL_H_
+#define SLUICE_NET_CHANNEL_H_
 
 #include <cstdint>
 #include <functional>
 #include <utility>
 
+#include "result.h"
+
 namespace sluice::net {
 
+// Forward-declared rather than included: event_loop.h includes this header,
+// so including it back would be circular.
 class EventLoop;
 
 // Binds one file descriptor to the EventLoop: which events we are
@@ -23,14 +28,15 @@ class Channel {
   using EventCallback = std::function<void()>;
 
   Channel(EventLoop* loop, int fd) noexcept : loop_(loop), fd_(fd) {}
-  // Aborts if the channel is still registered: destroying a registered
-  // channel would leave a dangling pointer inside epoll.
-  ~Channel();
 
   Channel(const Channel&) = delete;
   Channel& operator=(const Channel&) = delete;
   Channel(Channel&&) = delete;
   Channel& operator=(Channel&&) = delete;
+
+  // Aborts if the channel is still registered: destroying a registered
+  // channel would leave a dangling pointer inside epoll.
+  ~Channel();
 
   void SetReadCallback(EventCallback cb) { read_cb_ = std::move(cb); }
   void SetWriteCallback(EventCallback cb) { write_cb_ = std::move(cb); }
@@ -41,10 +47,10 @@ class Channel {
 
   // Enabling an event may register the descriptor with epoll for the first
   // time, which can fail at runtime (ENOMEM, or ENOSPC when the per-user
-  // epoll watch limit is hit). Returns 0 or the errno value; the caller
-  // decides what to do with the descriptor (usually: close it).
-  [[nodiscard]] int EnableReading();
-  [[nodiscard]] int EnableWriting();
+  // epoll watch limit is hit). On failure the caller decides what to do
+  // with the descriptor (usually: close it).
+  [[nodiscard]] Result<void> EnableReading();
+  [[nodiscard]] Result<void> EnableWriting();
   // Disabling never needs a new registration, so the only possible
   // failures are programming errors, which abort.
   void DisableReading();
@@ -67,7 +73,9 @@ class Channel {
  private:
   friend class EventLoop;
 
-  int Update();
+  Result<void> Update();
+  // Update() for changes that never add a registration; aborts on failure.
+  void UpdateExistingRegistration();
 
   EventLoop* loop_;
   int fd_;
@@ -81,3 +89,5 @@ class Channel {
 };
 
 }  // namespace sluice::net
+
+#endif  // SLUICE_NET_CHANNEL_H_

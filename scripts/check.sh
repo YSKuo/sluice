@@ -27,7 +27,7 @@ while IFS= read -r file; do
   files+=("${file}")
 done < <(find src tests -type f -name '*.cpp' | sort)
 if [[ ${#files[@]} -gt 0 ]]; then
-  clang-tidy --quiet -p build/debug-asan "${files[@]}"
+  clang-tidy-18 --quiet -p build/debug-asan "${files[@]}"
 fi
 
 for preset in debug-asan release; do

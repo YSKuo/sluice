@@ -18,35 +18,36 @@ constexpr uint32_t kWriteEvents = EPOLLOUT;
 
 Channel::~Channel() {
   if (registered_) {
-    std::fprintf(stderr, "fatal: Channel for fd %d destroyed while still registered\n", fd_);
+    std::fprintf(stderr,
+                 "fatal: Channel for fd %d destroyed while still registered\n",
+                 fd_);
     std::abort();
   }
 }
 
-int Channel::EnableReading() {
+Result<void> Channel::EnableReading() {
   events_ |= kReadEvents;
   return Update();
 }
 
-int Channel::EnableWriting() {
+Result<void> Channel::EnableWriting() {
   events_ |= kWriteEvents;
   return Update();
 }
 
 void Channel::DisableReading() {
   events_ &= ~kReadEvents;
-  // Cannot fail recoverably: this only modifies or removes a registration.
-  static_cast<void>(Update());
+  UpdateExistingRegistration();
 }
 
 void Channel::DisableWriting() {
   events_ &= ~kWriteEvents;
-  static_cast<void>(Update());
+  UpdateExistingRegistration();
 }
 
 void Channel::DisableAll() {
   events_ = 0;
-  static_cast<void>(Update());
+  UpdateExistingRegistration();
 }
 
 void Channel::Remove() {
@@ -58,11 +59,25 @@ void Channel::Remove() {
   }
 }
 
-bool Channel::IsReading() const noexcept { return (events_ & kReadEvents) != 0; }
+bool Channel::IsReading() const noexcept {
+  return (events_ & kReadEvents) != 0;
+}
 
-bool Channel::IsWriting() const noexcept { return (events_ & kWriteEvents) != 0; }
+bool Channel::IsWriting() const noexcept {
+  return (events_ & kWriteEvents) != 0;
+}
 
-int Channel::Update() { return loop_->UpdateChannel(this); }
+Result<void> Channel::Update() { return loop_->UpdateChannel(this); }
+
+void Channel::UpdateExistingRegistration() {
+  // Shrinking the interest set only modifies or removes a registration,
+  // which cannot fail at runtime; a failure here means a bug.
+  if (const Result<void> result = Update(); !result) {
+    std::fprintf(stderr, "fatal: updating Channel for fd %d: %s\n", fd_,
+                 result.error().message().c_str());
+    std::abort();
+  }
+}
 
 void Channel::HandleEvent(uint32_t revents) {
   // Hang-up with nothing left to read: the connection is gone. If EPOLLIN

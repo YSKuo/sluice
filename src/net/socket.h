@@ -1,65 +1,63 @@
-#pragma once
+#ifndef SLUICE_NET_SOCKET_H_
+#define SLUICE_NET_SOCKET_H_
 
 #include <cstddef>
 #include <span>
+#include <system_error>
 #include <utility>
 
 #include "net/inet_address.h"
 #include "net/unique_fd.h"
+#include "result.h"
 
 namespace sluice::net {
 
-// Outcome of one non-blocking read or write. On success `error` is 0 and
-// `bytes` is the number of bytes transferred (a read of 0 bytes means the
-// peer closed its write side). On failure `error` holds the errno value,
-// e.g. EAGAIN when the call would have blocked.
-struct IoResult {
-  size_t bytes = 0;
-  int error = 0;
-};
-
-// Outcome of accept(). On success `fd` is a valid, non-blocking,
-// close-on-exec connected socket; on failure `error` holds the errno value.
-struct AcceptResult {
-  UniqueFd fd;
-  InetAddress peer;
-  int error = 0;
-};
+struct AcceptedSocket;
 
 // An IPv4 TCP socket. Owns its descriptor through UniqueFd and wraps the
-// syscalls the gateway needs. Every method reports failure through its
-// return value (0 / IoResult::error == 0 on success, otherwise errno);
-// EINTR is retried internally and never reported.
+// syscalls the gateway needs. Failures are returned as errors in a Result;
+// EINTR is retried internally and never reported. EAGAIN/EWOULDBLOCK is
+// reported as an error (check it with IsWouldBlock()).
 class Socket {
  public:
+  // Creates a non-blocking, close-on-exec IPv4 TCP socket.
+  static Result<Socket> CreateNonBlockingTcp();
+
   explicit Socket(UniqueFd fd) noexcept : fd_(std::move(fd)) {}
 
-  // Creates a non-blocking, close-on-exec IPv4 TCP socket. On failure the
-  // returned socket is invalid and `*error` holds errno.
-  static Socket CreateNonBlockingTcp(int* error);
-
   [[nodiscard]] int fd() const noexcept { return fd_.get(); }
-  [[nodiscard]] bool valid() const noexcept { return fd_.valid(); }
 
-  [[nodiscard]] int SetReuseAddr(bool on);
-  [[nodiscard]] int SetNoDelay(bool on);
-  [[nodiscard]] int Bind(const InetAddress& addr);
-  [[nodiscard]] int Listen(int backlog);
-  [[nodiscard]] AcceptResult Accept();
+  [[nodiscard]] Result<void> SetReuseAddr(bool on);
+  [[nodiscard]] Result<void> SetNoDelay(bool on);
+  [[nodiscard]] Result<void> Bind(const InetAddress& addr);
+  [[nodiscard]] Result<void> Listen(int backlog);
+  // The accepted socket is non-blocking and close-on-exec.
+  [[nodiscard]] Result<AcceptedSocket> Accept();
 
-  [[nodiscard]] IoResult Read(std::span<char> buf);
-  // Uses MSG_NOSIGNAL, so writing to a peer that has gone away returns
+  // Returns the number of bytes read; 0 means the peer closed its write
+  // side (EOF).
+  [[nodiscard]] Result<size_t> Read(std::span<char> buf);
+  // Returns the number of bytes written, which may be fewer than requested.
+  // Uses MSG_NOSIGNAL, so writing to a peer that has gone away fails with
   // EPIPE instead of killing the process with SIGPIPE.
-  [[nodiscard]] IoResult Write(std::span<const char> data);
+  [[nodiscard]] Result<size_t> Write(std::span<const char> data);
 
   // Address the socket is bound to; useful after binding to port 0.
-  [[nodiscard]] InetAddress LocalAddress(int* error) const;
-  // Reads and clears the pending socket error (SO_ERROR), e.g. after
-  // epoll reports EPOLLERR. Returns 0 when no error is pending.
-  [[nodiscard]] int TakeError() const;
+  [[nodiscard]] Result<InetAddress> LocalAddress() const;
+  // Reads and clears the pending socket error (SO_ERROR), e.g. after epoll
+  // reports EPOLLERR. Returns an empty error_code when none is pending.
+  [[nodiscard]] std::error_code TakeError() const;
 
  private:
   UniqueFd fd_;
 };
 
+// A connection returned by Socket::Accept().
+struct AcceptedSocket {
+  Socket socket;
+  InetAddress peer;
+};
+
 }  // namespace sluice::net
+
+#endif  // SLUICE_NET_SOCKET_H_

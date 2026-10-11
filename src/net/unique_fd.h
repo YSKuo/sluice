@@ -1,4 +1,5 @@
-#pragma once
+#ifndef SLUICE_NET_UNIQUE_FD_H_
+#define SLUICE_NET_UNIQUE_FD_H_
 
 #include <unistd.h>
 
@@ -50,3 +51,5 @@ class UniqueFd {
 };
 
 }  // namespace sluice::net
+
+#endif  // SLUICE_NET_UNIQUE_FD_H_

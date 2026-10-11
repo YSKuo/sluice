@@ -1,4 +1,5 @@
-#pragma once
+#ifndef SLUICE_NET_BUFFER_H_
+#define SLUICE_NET_BUFFER_H_
 
 #include <cstddef>
 #include <span>
@@ -20,7 +21,9 @@ namespace sluice::net {
 // the buffer is ever grown.
 class Buffer {
  public:
-  [[nodiscard]] size_t ReadableBytes() const noexcept { return write_index_ - read_index_; }
+  [[nodiscard]] size_t ReadableBytes() const noexcept {
+    return write_index_ - read_index_;
+  }
   [[nodiscard]] bool empty() const noexcept { return ReadableBytes() == 0; }
 
   // View of the readable bytes. Invalidated by any non-const call.
@@ -49,3 +52,5 @@ class Buffer {
 };
 
 }  // namespace sluice::net
+
+#endif  // SLUICE_NET_BUFFER_H_

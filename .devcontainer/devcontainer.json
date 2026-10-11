@@ -15,7 +15,7 @@
         "twxs.cmake"
       ],
       "settings": {
-        "clangd.path": "/usr/bin/clangd",
+        "clangd.path": "/usr/bin/clangd-18",
         "C_Cpp.intelliSenseEngine": "disabled"
       }
     }

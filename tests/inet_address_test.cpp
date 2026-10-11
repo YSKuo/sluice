@@ -1,11 +1,13 @@
 #include "net/inet_address.h"
 
-#include <gtest/gtest.h>
+#include "gtest/gtest.h"
 
 namespace sluice::net {
 namespace {
 
-TEST(InetAddressTest, DefaultIsAnyPortZero) { EXPECT_EQ(InetAddress().ToString(), "0.0.0.0:0"); }
+TEST(InetAddressTest, DefaultIsAnyPortZero) {
+  EXPECT_EQ(InetAddress().ToString(), "0.0.0.0:0");
+}
 
 TEST(InetAddressTest, ParsesDottedQuad) {
   const auto addr = InetAddress::FromIpPort("192.168.1.20", 8080);

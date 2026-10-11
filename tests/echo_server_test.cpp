@@ -1,7 +1,6 @@
 #include "echo/echo_server.h"
 
 #include <fcntl.h>
-#include <gtest/gtest.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
@@ -12,11 +11,15 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
+
+#include "gtest/gtest.h"
 
 #include "net/event_loop.h"
 #include "net/inet_address.h"
 #include "net/unique_fd.h"
+#include "result.h"
 
 namespace sluice::echo {
 namespace {
@@ -37,13 +40,14 @@ class Client {
       : fd_(::socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0)) {
     EXPECT_TRUE(fd_.valid());
     if (recv_buffer_size > 0) {
-      EXPECT_EQ(::setsockopt(fd_.get(), SOL_SOCKET, SO_RCVBUF, &recv_buffer_size,
-                             sizeof(recv_buffer_size)),
+      EXPECT_EQ(::setsockopt(fd_.get(), SOL_SOCKET, SO_RCVBUF,
+                             &recv_buffer_size, sizeof(recv_buffer_size)),
                 0);
     }
     // Connecting while blocking is fine: the kernel completes the handshake
     // from the listen backlog without the server calling accept().
-    EXPECT_EQ(::connect(fd_.get(), server.sockaddr_ptr(), InetAddress::length()), 0);
+    EXPECT_EQ(
+        ::connect(fd_.get(), server.sockaddr_ptr(), InetAddress::length()), 0);
     EXPECT_EQ(::fcntl(fd_.get(), F_SETFL, O_NONBLOCK), 0);
   }
 
@@ -54,8 +58,8 @@ class Client {
 
   void Pump() {
     while (sent_ < to_send_.size()) {
-      const ssize_t n =
-          ::send(fd_.get(), to_send_.data() + sent_, to_send_.size() - sent_, MSG_NOSIGNAL);
+      const ssize_t n = ::send(fd_.get(), to_send_.data() + sent_,
+                               to_send_.size() - sent_, MSG_NOSIGNAL);
       if (n <= 0) {
         break;
       }
@@ -104,21 +108,27 @@ std::string MakePayload(size_t size) {
 class EchoServerTest : public ::testing::Test {
  protected:
   void StartServer(size_t high_water_mark = EchoServer::kDefaultHighWaterMark) {
-    int err = 0;
-    loop_ = EventLoop::Create(&err);
-    ASSERT_NE(loop_, nullptr);
+    Result<std::unique_ptr<EventLoop>> loop = EventLoop::Create();
+    ASSERT_TRUE(loop.has_value()) << loop.error().message();
+    loop_ = *std::move(loop);
     // Port 0: the kernel picks a free port, so tests never collide.
-    server_ = EchoServer::Create(loop_.get(), InetAddress::Loopback(0), &err, high_water_mark);
-    ASSERT_NE(server_, nullptr) << "bind failed: " << err;
-    ASSERT_EQ(server_->Start(), 0);
-    address_ = server_->LocalAddress(&err);
-    ASSERT_EQ(err, 0);
+    Result<std::unique_ptr<EchoServer>> server = EchoServer::Create(
+        loop_.get(), InetAddress::Loopback(0), high_water_mark);
+    ASSERT_TRUE(server.has_value()) << server.error().message();
+    server_ = *std::move(server);
+    const Result<void> started = server_->Start();
+    ASSERT_TRUE(started.has_value()) << started.error().message();
+    const Result<InetAddress> address = server_->LocalAddress();
+    ASSERT_TRUE(address.has_value()) << address.error().message();
+    address_ = *address;
   }
 
   // Alternates client I/O with loop iterations until `done` holds or a
   // deadline passes. Returns whether `done` became true.
-  bool RunUntil(const std::vector<Client*>& clients, const std::function<bool()>& done) {
-    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+  bool RunUntil(const std::vector<Client*>& clients,
+                const std::function<bool()>& done) {
+    const auto deadline =
+        std::chrono::steady_clock::now() + std::chrono::seconds(10);
     while (std::chrono::steady_clock::now() < deadline) {
       for (Client* client : clients) {
         client->Pump();
@@ -147,7 +157,8 @@ TEST_F(EchoServerTest, EchoesMessage) {
   Client client(address_);
   client.QueueSend("hello, sluice");
 
-  EXPECT_TRUE(RunUntil({&client}, [&] { return client.received() == "hello, sluice"; }));
+  EXPECT_TRUE(RunUntil({&client},
+                       [&] { return client.received() == "hello, sluice"; }));
 }
 
 TEST_F(EchoServerTest, ClientsAreIndependent) {
@@ -160,7 +171,8 @@ TEST_F(EchoServerTest, ClientsAreIndependent) {
   c.QueueSend("charlie");
 
   EXPECT_TRUE(RunUntil({&a, &b, &c}, [&] {
-    return a.received() == "alpha" && b.received() == "bravo" && c.received() == "charlie";
+    return a.received() == "alpha" && b.received() == "bravo" &&
+           c.received() == "charlie";
   }));
   EXPECT_EQ(server_->connection_count(), 3U);
 }
@@ -168,7 +180,8 @@ TEST_F(EchoServerTest, ClientsAreIndependent) {
 TEST_F(EchoServerTest, ConnectionIsDestroyedAfterPeerCloses) {
   StartServer();
   Client client(address_);
-  ASSERT_TRUE(RunUntil({&client}, [&] { return server_->connection_count() == 1; }));
+  ASSERT_TRUE(
+      RunUntil({&client}, [&] { return server_->connection_count() == 1; }));
 
   client.Close();
   EXPECT_TRUE(RunUntil({}, [&] { return server_->connection_count() == 0; }));
@@ -207,7 +220,8 @@ TEST_F(EchoServerTest, PausesReadingWhenPeerDoesNotRead) {
   // Once the client reads again, the server resumes and every byte comes
   // back intact and in order.
   client.set_reading(true);
-  ASSERT_TRUE(RunUntil({&client}, [&] { return client.received().size() == payload.size(); }));
+  ASSERT_TRUE(RunUntil(
+      {&client}, [&] { return client.received().size() == payload.size(); }));
   EXPECT_TRUE(client.received() == payload);
 }
 

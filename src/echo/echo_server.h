@@ -1,15 +1,16 @@
-#pragma once
+#ifndef SLUICE_ECHO_ECHO_SERVER_H_
+#define SLUICE_ECHO_ECHO_SERVER_H_
 
 #include <cstddef>
 #include <cstdint>
 #include <memory>
 
+#include "net/buffer.h"
+#include "net/event_loop.h"
 #include "net/inet_address.h"
+#include "net/tcp_connection.h"
 #include "net/tcp_server.h"
-
-namespace sluice::net {
-class EventLoop;
-}  // namespace sluice::net
+#include "result.h"
 
 namespace sluice::echo {
 
@@ -23,20 +24,20 @@ namespace sluice::echo {
 // therefore stays bounded by roughly high_water_mark + one read chunk.
 class EchoServer {
  public:
-  static constexpr size_t kDefaultHighWaterMark = size_t{1024} * 1024;
-
   class PassKey {
     friend class EchoServer;
     PassKey() = default;
   };
 
-  // Binds to `listen_addr` but does not listen yet. Returns nullptr and
-  // sets `*error` to errno on failure.
-  static std::unique_ptr<EchoServer> Create(net::EventLoop* loop,
-                                            const net::InetAddress& listen_addr, int* error,
-                                            size_t high_water_mark = kDefaultHighWaterMark);
-  EchoServer(PassKey key, std::unique_ptr<net::TcpServer> server, size_t high_water_mark);
-  ~EchoServer() = default;
+  static constexpr size_t kDefaultHighWaterMark = size_t{1024} * 1024;
+
+  // Binds to `listen_addr` but does not listen yet.
+  static Result<std::unique_ptr<EchoServer>> Create(
+      net::EventLoop* loop, const net::InetAddress& listen_addr,
+      size_t high_water_mark = kDefaultHighWaterMark);
+
+  EchoServer(PassKey key, std::unique_ptr<net::TcpServer> server,
+             size_t high_water_mark);
 
   // Callbacks registered on the server capture `this`.
   EchoServer(const EchoServer&) = delete;
@@ -44,13 +45,17 @@ class EchoServer {
   EchoServer(EchoServer&&) = delete;
   EchoServer& operator=(EchoServer&&) = delete;
 
-  // Starts accepting connections. Returns 0 or errno.
-  [[nodiscard]] int Start() { return server_->Start(); }
+  ~EchoServer() = default;
 
-  [[nodiscard]] net::InetAddress LocalAddress(int* error) const {
-    return server_->LocalAddress(error);
+  // Starts accepting connections.
+  [[nodiscard]] Result<void> Start() { return server_->Start(); }
+
+  [[nodiscard]] Result<net::InetAddress> LocalAddress() const {
+    return server_->LocalAddress();
   }
-  [[nodiscard]] size_t connection_count() const noexcept { return server_->connection_count(); }
+  [[nodiscard]] size_t connection_count() const noexcept {
+    return server_->connection_count();
+  }
   // How many times any connection was paused for backpressure.
   [[nodiscard]] uint64_t pause_count() const noexcept { return pause_count_; }
 
@@ -64,3 +69,5 @@ class EchoServer {
 };
 
 }  // namespace sluice::echo
+
+#endif  // SLUICE_ECHO_ECHO_SERVER_H_

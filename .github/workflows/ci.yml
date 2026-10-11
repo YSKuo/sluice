@@ -17,7 +17,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            ca-certificates clang clang-format clang-tidy cmake \
+            ca-certificates clang-18 clang-format-18 clang-tidy-18 cmake \
             libclang-rt-18-dev ninja-build
       - name: Run scripts/check.sh
         run: ./scripts/check.sh

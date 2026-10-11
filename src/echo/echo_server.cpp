@@ -4,28 +4,34 @@
 
 namespace sluice::echo {
 
-std::unique_ptr<EchoServer> EchoServer::Create(net::EventLoop* loop,
-                                               const net::InetAddress& listen_addr, int* error,
-                                               size_t high_water_mark) {
-  std::unique_ptr<net::TcpServer> server = net::TcpServer::Create(loop, listen_addr, error);
+Result<std::unique_ptr<EchoServer>> EchoServer::Create(
+    net::EventLoop* loop, const net::InetAddress& listen_addr,
+    size_t high_water_mark) {
+  Result<std::unique_ptr<net::TcpServer>> server =
+      net::TcpServer::Create(loop, listen_addr);
   if (!server) {
-    return nullptr;
+    return Error(server.error());
   }
-  return std::make_unique<EchoServer>(PassKey(), std::move(server), high_water_mark);
+  return std::make_unique<EchoServer>(PassKey(), *std::move(server),
+                                      high_water_mark);
 }
 
 EchoServer::EchoServer(PassKey /*key*/, std::unique_ptr<net::TcpServer> server,
                        size_t high_water_mark)
     : server_(std::move(server)), high_water_mark_(high_water_mark) {
   server_->SetMessageCallback(
-      [this](net::TcpConnection& conn, net::Buffer& input) { OnMessage(conn, input); });
-  server_->SetWriteCompleteCallback([this](net::TcpConnection& conn) { OnWriteComplete(conn); });
+      [this](net::TcpConnection& conn, net::Buffer& input) {
+        OnMessage(conn, input);
+      });
+  server_->SetWriteCompleteCallback(
+      [this](net::TcpConnection& conn) { OnWriteComplete(conn); });
 }
 
 void EchoServer::OnMessage(net::TcpConnection& conn, net::Buffer& input) {
   conn.Send(input.Peek());
   input.RetrieveAll();
-  if (conn.connected() && conn.reading() && conn.PendingOutputBytes() > high_water_mark_) {
+  if (conn.connected() && conn.reading() &&
+      conn.PendingOutputBytes() > high_water_mark_) {
     conn.PauseReading();
     ++pause_count_;
   }

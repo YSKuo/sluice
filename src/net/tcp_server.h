@@ -1,4 +1,5 @@
-#pragma once
+#ifndef SLUICE_NET_TCP_SERVER_H_
+#define SLUICE_NET_TCP_SERVER_H_
 
 #include <cstddef>
 #include <cstdint>
@@ -8,12 +9,13 @@
 #include <utility>
 
 #include "net/acceptor.h"
+#include "net/event_loop.h"
 #include "net/inet_address.h"
+#include "net/socket.h"
 #include "net/tcp_connection.h"
+#include "result.h"
 
 namespace sluice::net {
-
-class EventLoop;
 
 // Accepts connections through an Acceptor and owns every live
 // TcpConnection. Protocol logic is supplied through callbacks, which are
@@ -32,31 +34,38 @@ class TcpServer {
     PassKey() = default;
   };
 
-  // Binds to `listen_addr` but does not listen yet. Returns nullptr and
-  // sets `*error` to errno on failure.
-  static std::unique_ptr<TcpServer> Create(EventLoop* loop, const InetAddress& listen_addr,
-                                           int* error);
+  // Binds to `listen_addr` but does not listen yet.
+  static Result<std::unique_ptr<TcpServer>> Create(
+      EventLoop* loop, const InetAddress& listen_addr);
+
   TcpServer(PassKey key, EventLoop* loop, std::unique_ptr<Acceptor> acceptor);
-  ~TcpServer() = default;
 
   TcpServer(const TcpServer&) = delete;
   TcpServer& operator=(const TcpServer&) = delete;
   TcpServer(TcpServer&&) = delete;
   TcpServer& operator=(TcpServer&&) = delete;
 
-  void SetConnectionCallback(ConnectionCallback cb) { connection_cb_ = std::move(cb); }
-  void SetMessageCallback(TcpConnection::MessageCallback cb) { message_cb_ = std::move(cb); }
+  ~TcpServer() = default;
+
+  void SetConnectionCallback(ConnectionCallback cb) {
+    connection_cb_ = std::move(cb);
+  }
+  void SetMessageCallback(TcpConnection::MessageCallback cb) {
+    message_cb_ = std::move(cb);
+  }
   void SetWriteCompleteCallback(TcpConnection::WriteCompleteCallback cb) {
     write_complete_cb_ = std::move(cb);
   }
 
-  // Starts accepting connections. Returns 0 or errno.
-  [[nodiscard]] int Start() { return acceptor_->Listen(); }
+  // Starts accepting connections.
+  [[nodiscard]] Result<void> Start() { return acceptor_->Listen(); }
 
-  [[nodiscard]] InetAddress LocalAddress(int* error) const {
-    return acceptor_->LocalAddress(error);
+  [[nodiscard]] Result<InetAddress> LocalAddress() const {
+    return acceptor_->LocalAddress();
   }
-  [[nodiscard]] size_t connection_count() const noexcept { return connections_.size(); }
+  [[nodiscard]] size_t connection_count() const noexcept {
+    return connections_.size();
+  }
 
  private:
   void HandleNewConnection(Socket socket, const InetAddress& peer);
@@ -73,3 +82,5 @@ class TcpServer {
 };
 
 }  // namespace sluice::net
+
+#endif  // SLUICE_NET_TCP_SERVER_H_
