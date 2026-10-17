@@ -33,6 +33,23 @@
         "CMAKE_CXX_COMPILER": "clang++-18",
         "SLUICE_WERROR": "ON"
       }
+    },
+    {
+      "name": "fuzz",
+      "displayName": "libFuzzer + ASan/UBSan",
+      "description": "Builds the libFuzzer targets with coverage instrumentation and sanitizers. Run them with scripts/fuzz.sh.",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/fuzz",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_C_COMPILER": "clang-18",
+        "CMAKE_CXX_COMPILER": "clang++-18",
+        "SLUICE_WERROR": "ON",
+        "SLUICE_BUILD_TESTS": "OFF",
+        "SLUICE_BUILD_FUZZERS": "ON",
+        "CMAKE_CXX_FLAGS": "-fsanitize=fuzzer-no-link,address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer",
+        "CMAKE_EXE_LINKER_FLAGS": "-fsanitize=address,undefined"
+      }
     }
   ],
   "buildPresets": [
@@ -43,6 +60,10 @@
     {
       "name": "release",
       "configurePreset": "release"
+    },
+    {
+      "name": "fuzz",
+      "configurePreset": "fuzz"
     }
   ],
   "testPresets": [

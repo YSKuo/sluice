@@ -85,6 +85,11 @@ class TcpConnection {
   [[nodiscard]] size_t PendingOutputBytes() const noexcept {
     return output_.ReadableBytes();
   }
+  // Bytes received but not yet consumed by the protocol layer. A protocol
+  // that pauses reading (e.g. one HTTP response in flight at a time) uses
+  // this to resume work on already-buffered input, for which no new read
+  // event will arrive.
+  [[nodiscard]] Buffer& input() noexcept { return input_; }
 
  private:
   enum class State : uint8_t {

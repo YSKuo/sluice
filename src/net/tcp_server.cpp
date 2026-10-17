@@ -60,6 +60,9 @@ void TcpServer::HandleConnectionClosed(TcpConnection& conn) {
   if (node.empty()) {
     return;
   }
+  if (close_cb_) {
+    close_cb_(conn);
+  }
   // We are inside one of `conn`'s own callbacks, so it must outlive this
   // call stack: hand ownership to the loop for destruction after dispatch.
   loop_->DeleteLater(std::move(node.mapped()));

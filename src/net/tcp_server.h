@@ -56,6 +56,10 @@ class TcpServer {
   void SetWriteCompleteCallback(TcpConnection::WriteCompleteCallback cb) {
     write_complete_cb_ = std::move(cb);
   }
+  // Runs once when a connection closes, before it is handed to
+  // EventLoop::DeleteLater, so per-connection protocol state can be
+  // released. The connection is still valid during the call.
+  void SetCloseCallback(ConnectionCallback cb) { close_cb_ = std::move(cb); }
 
   // Starts accepting connections.
   [[nodiscard]] Result<void> Start() { return acceptor_->Listen(); }
@@ -77,6 +81,7 @@ class TcpServer {
   std::unordered_map<uint64_t, std::unique_ptr<TcpConnection>> connections_;
 
   ConnectionCallback connection_cb_;
+  ConnectionCallback close_cb_;
   TcpConnection::MessageCallback message_cb_;
   TcpConnection::WriteCompleteCallback write_complete_cb_;
 };

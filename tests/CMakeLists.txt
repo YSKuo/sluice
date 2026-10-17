@@ -19,6 +19,10 @@ add_executable(sluice_tests
     buffer_test.cpp
     echo_server_test.cpp
     event_loop_test.cpp
+    http_headers_test.cpp
+    http_request_parser_test.cpp
+    http_response_test.cpp
+    http_server_test.cpp
     inet_address_test.cpp
     result_test.cpp
     smoke_test.cpp

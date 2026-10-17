@@ -6,13 +6,16 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <format>
 #include <memory>
 #include <optional>
 #include <span>
 #include <string>
 #include <string_view>
 
-#include "echo/echo_server.h"
+#include "http/http_server.h"
+#include "http/request.h"
+#include "http/response.h"
 #include "net/channel.h"
 #include "net/event_loop.h"
 #include "net/inet_address.h"
@@ -33,8 +36,9 @@ void PrintUsage() {
   std::printf(
       "usage: sluice [--host IPV4] [--port PORT] [--version] [--help]\n"
       "\n"
-      "Week 1 milestone: runs a TCP echo server on HOST:PORT (default\n"
-      "0.0.0.0:8080). Stop it with Ctrl-C or SIGTERM.\n");
+      "Week 2 milestone: serves HTTP/1.1 on HOST:PORT (default\n"
+      "0.0.0.0:8080), answering every request with a plain-text summary of\n"
+      "it. Stop it with Ctrl-C or SIGTERM.\n");
 }
 
 // Parses a whole string as a TCP port; trailing characters are rejected.
@@ -78,6 +82,17 @@ std::optional<Options> ParseArgs(std::span<char* const> args) {
     }
   }
   return options;
+}
+
+// The Week 2 handler: describes the request back to the client. Week 3
+// replaces it with routing and the reverse proxy.
+sluice::http::Response DescribeRequest(const sluice::http::Request& request) {
+  sluice::http::Response response;
+  response.headers.Add("Content-Type", "text/plain; charset=utf-8");
+  response.body =
+      std::format("sluice {}\n{} {}\nbody: {} bytes\n", sluice::GetVersion(),
+                  request.method, request.target, request.body.size());
+  return response;
 }
 
 // Delivers SIGINT/SIGTERM through a signalfd so they arrive as ordinary
@@ -158,8 +173,9 @@ int main(int argc, char** argv) {
     return 1;
   }
 
-  sluice::Result<std::unique_ptr<sluice::echo::EchoServer>> server =
-      sluice::echo::EchoServer::Create(&event_loop, *listen_addr);
+  sluice::Result<std::unique_ptr<sluice::http::HttpServer>> server =
+      sluice::http::HttpServer::Create(&event_loop, *listen_addr,
+                                       DescribeRequest);
   sluice::Result<void> started;
   if (server) {
     started = (*server)->Start();
@@ -175,7 +191,7 @@ int main(int argc, char** argv) {
     return 1;
   }
 
-  std::fprintf(stderr, "sluice %s: echo server listening on %s\n",
+  std::fprintf(stderr, "sluice %s: HTTP server listening on %s\n",
                std::string(sluice::GetVersion()).c_str(),
                listen_addr->ToString().c_str());
   event_loop.Loop();

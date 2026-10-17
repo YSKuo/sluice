@@ -13,7 +13,7 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.."
 files=()
 while IFS= read -r file; do
   files+=("${file}")
-done < <(find src tests -type f \( -name '*.cpp' -o -name '*.h' -o -name '*.hpp' \) | sort)
+done < <(find src tests fuzz -type f \( -name '*.cpp' -o -name '*.h' -o -name '*.hpp' \) | sort)
 
 if [[ ${#files[@]} -eq 0 ]]; then
   echo "No source files to format."

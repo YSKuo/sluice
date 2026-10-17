@@ -14,6 +14,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 option(SLUICE_WERROR "Treat compiler warnings as errors" OFF)
 option(SLUICE_BUILD_TESTS "Build the unit tests (downloads GoogleTest)" ON)
+option(SLUICE_BUILD_FUZZERS "Build libFuzzer targets (needs clang)" OFF)
 
 set(SLUICE_WARNING_FLAGS
     -Wall
@@ -27,6 +28,12 @@ set(SLUICE_WARNING_FLAGS
 add_library(sluice_core
     src/version.cpp
     src/echo/echo_server.cpp
+    src/http/headers.cpp
+    src/http/http_server.cpp
+    src/http/request.cpp
+    src/http/request_parser.cpp
+    src/http/response.cpp
+    src/http/status.cpp
     src/net/acceptor.cpp
     src/net/buffer.cpp
     src/net/channel.cpp
@@ -48,4 +55,12 @@ target_link_libraries(sluice PRIVATE sluice_core)
 if(SLUICE_BUILD_TESTS)
     enable_testing()
     add_subdirectory(tests)
+endif()
+
+if(SLUICE_BUILD_FUZZERS)
+    # The fuzz preset compiles everything with -fsanitize=fuzzer-no-link
+    # (coverage instrumentation); only the fuzzer itself links libFuzzer.
+    add_executable(request_parser_fuzzer fuzz/request_parser_fuzzer.cpp)
+    target_link_libraries(request_parser_fuzzer PRIVATE sluice_core)
+    target_link_options(request_parser_fuzzer PRIVATE -fsanitize=fuzzer)
 endif()

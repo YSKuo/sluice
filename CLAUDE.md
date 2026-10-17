@@ -46,15 +46,15 @@ needed, raise it in conversation first and wait for a decision.
 
 ## Division of labor
 
-The user writes the first version of core logic by hand: the event loop,
-`Channel`, Socket RAII classes, `Acceptor`, the parser state machine,
-backpressure logic, route matching, the round robin selector, timeout
-checking, and the token bucket. In these areas, Claude's role is to review,
-point out problems, and explain why — not to rewrite them into a full
-implementation unless explicitly asked.
+As of Week 2 (2026-10-17), Claude implements everything, including core
+logic (parser, proxy, backpressure, routing, load balancing, timeouts, rate
+limiting), plus build configuration, tests, scripts, Docker files, and
+benchmark write-ups. The author's role is to read and understand the code,
+so every change must come with explanations good enough to learn from (see
+the explain-every-file rule below).
 
-Build configuration, test scaffolding, scripts, Docker-related files, and
-benchmark result write-ups may be produced directly by Claude.
+The project status page (a claude.ai artifact) must be updated whenever
+work is completed or plans change.
 
 ## Explain-every-file rule
 
@@ -96,6 +96,9 @@ ctest --preset debug-asan --output-on-failure
 
 # Full check (format + clang-tidy + build + test, both presets)
 ./scripts/check.sh
+
+# Fuzz the HTTP parser (optional; not part of check.sh)
+./scripts/fuzz.sh 60
 ```
 
 ## Working rules

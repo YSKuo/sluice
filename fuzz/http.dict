@@ -1,0 +1,13 @@
+# libFuzzer dictionary for the HTTP request parser.
+"GET"
+"POST"
+" HTTP/1.1"
+" HTTP/1.0"
+"\x0d\x0a"
+"\x0d\x0a\x0d\x0a"
+"Host: "
+"Content-Length: "
+"Transfer-Encoding: chunked"
+"Connection: close"
+"Connection: keep-alive"
+": "

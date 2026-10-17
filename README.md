@@ -46,14 +46,17 @@ cmake --build --preset debug-asan
 # Run the unit tests
 ctest --preset debug-asan --output-on-failure
 
-# Run the Week 1 echo server (Ctrl-C to stop)
+# Run the Week 2 HTTP server (Ctrl-C to stop)
 ./build/debug-asan/sluice --port 8080
 
-# In another shell: every line typed is echoed back
-nc 127.0.0.1 8080
+# In another shell: two requests over one keep-alive connection
+curl -v http://127.0.0.1:8080/one http://127.0.0.1:8080/two
 
 # Full pre-commit check: format, clang-tidy, both presets, tests
 ./scripts/check.sh
+
+# Fuzz the HTTP request parser for 60 seconds (libFuzzer + ASan/UBSan)
+./scripts/fuzz.sh 60
 ```
 
 For an optimized build (used for benchmarking):
@@ -69,7 +72,7 @@ cmake --build --preset release
 | Week | Scope | Status |
 | --- | --- | --- |
 | Week 1 | Event loop + Socket RAII (echo server) | Done |
-| Week 2 | HTTP/1.1 parser + keep-alive + header limits | Not started |
+| Week 2 | HTTP/1.1 parser + keep-alive + header limits | Done |
 | Week 3 | Reverse proxy, backpressure, routing, round robin, timeouts | Not started |
 | Week 4 | Rate limiting, benchmark vs Nginx, ASan clean, design write-up | Not started |
 
@@ -79,6 +82,7 @@ Design notes and rationale are recorded as ADRs in `docs/design/`:
 
 - [ADR 0001: Event loop and connection lifecycle](docs/design/0001-event-loop.md)
 - [ADR 0002: Google C++ style and error handling](docs/design/0002-google-style-and-errors.md)
+- [ADR 0003: HTTP/1.1 request parser and keep-alive](docs/design/0003-http-parser.md)
 
 ## Benchmark
 
