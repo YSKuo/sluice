@@ -17,15 +17,21 @@ FetchContent_MakeAvailable(googletest)
 
 add_executable(sluice_tests
     buffer_test.cpp
+    connector_test.cpp
     echo_server_test.cpp
     event_loop_test.cpp
     http_headers_test.cpp
     http_request_parser_test.cpp
+    http_response_parser_test.cpp
     http_response_test.cpp
     http_server_test.cpp
     inet_address_test.cpp
+    proxy_forwarding_test.cpp
+    proxy_routing_test.cpp
+    proxy_server_test.cpp
     result_test.cpp
     smoke_test.cpp
+    timer_test.cpp
     unique_fd_test.cpp
 )
 target_link_libraries(sluice_tests PRIVATE sluice_core GTest::gtest_main)

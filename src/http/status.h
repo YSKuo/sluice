@@ -11,11 +11,15 @@ enum class StatusCode : uint16_t {
   kOk = 200,
   kBadRequest = 400,
   kNotFound = 404,
+  kRequestTimeout = 408,
   kContentTooLarge = 413,
   kUriTooLong = 414,
   kRequestHeaderFieldsTooLarge = 431,
   kInternalServerError = 500,
   kNotImplemented = 501,
+  kBadGateway = 502,
+  kServiceUnavailable = 503,
+  kGatewayTimeout = 504,
   kHttpVersionNotSupported = 505,
 };
 

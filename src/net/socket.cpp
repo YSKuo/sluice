@@ -57,6 +57,13 @@ Result<void> Socket::Listen(int backlog) {
   return CheckSyscall(::listen(fd(), backlog));
 }
 
+Result<void> Socket::Connect(const InetAddress& addr) {
+  // Not retried on EINTR: calling connect() again on a connect in progress
+  // fails with EALREADY. On a non-blocking socket EINTR is not expected.
+  return CheckSyscall(
+      ::connect(fd(), addr.sockaddr_ptr(), InetAddress::length()));
+}
+
 Result<AcceptedSocket> Socket::Accept() {
   sockaddr_in peer{};
   socklen_t len = sizeof(peer);

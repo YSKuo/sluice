@@ -33,15 +33,24 @@ add_library(sluice_core
     src/http/request.cpp
     src/http/request_parser.cpp
     src/http/response.cpp
+    src/http/response_parser.cpp
     src/http/status.cpp
+    src/http/syntax.cpp
     src/net/acceptor.cpp
     src/net/buffer.cpp
     src/net/channel.cpp
+    src/net/connector.cpp
     src/net/event_loop.cpp
     src/net/inet_address.cpp
     src/net/socket.cpp
     src/net/tcp_connection.cpp
     src/net/tcp_server.cpp
+    src/proxy/client_session.cpp
+    src/proxy/forwarding.cpp
+    src/proxy/proxy_server.cpp
+    src/proxy/route_table.cpp
+    src/proxy/upstream.cpp
+    src/proxy/upstream_call.cpp
 )
 target_include_directories(sluice_core PUBLIC ${CMAKE_SOURCE_DIR}/src)
 target_compile_options(sluice_core PUBLIC ${SLUICE_WARNING_FLAGS})

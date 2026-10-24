@@ -2,6 +2,8 @@
 
 #include "gtest/gtest.h"
 
+#include "result.h"
+
 namespace sluice::net {
 namespace {
 
@@ -27,6 +29,26 @@ TEST(InetAddressTest, RejectsInvalidAddresses) {
 TEST(InetAddressTest, NamedConstructors) {
   EXPECT_EQ(InetAddress::Any(80).ToString(), "0.0.0.0:80");
   EXPECT_EQ(InetAddress::Loopback(65535).ToString(), "127.0.0.1:65535");
+}
+
+}  // namespace
+}  // namespace sluice::net
+
+namespace sluice::net {
+namespace {
+
+TEST(InetAddressResolveTest, ResolvesLiteralsAndNames) {
+  const Result<InetAddress> literal = InetAddress::Resolve("127.0.0.1", 80);
+  ASSERT_TRUE(literal.has_value());
+  EXPECT_EQ(literal->ToString(), "127.0.0.1:80");
+
+  const Result<InetAddress> name = InetAddress::Resolve("localhost", 8080);
+  ASSERT_TRUE(name.has_value());
+  EXPECT_EQ(name->port(), 8080);
+}
+
+TEST(InetAddressResolveTest, FailsForUnknownNames) {
+  EXPECT_FALSE(InetAddress::Resolve("no-such-host.invalid", 80).has_value());
 }
 
 }  // namespace

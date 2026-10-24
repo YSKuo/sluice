@@ -1,9 +1,12 @@
 #include "net/inet_address.h"
 
 #include <arpa/inet.h>
+#include <netdb.h>
 
 #include <array>
+#include <cerrno>
 #include <format>
+#include <memory>
 
 namespace sluice::net {
 
@@ -27,6 +30,29 @@ std::optional<InetAddress> InetAddress::FromIpPort(std::string_view ip,
   if (::inet_pton(AF_INET, ip_str.c_str(), &addr.sin_addr) != 1) {
     return std::nullopt;
   }
+  return InetAddress(addr);
+}
+
+Result<InetAddress> InetAddress::Resolve(const std::string& host,
+                                         uint16_t port) {
+  if (std::optional<InetAddress> literal = FromIpPort(host, port)) {
+    return *literal;
+  }
+  addrinfo hints{};
+  hints.ai_family = AF_INET;
+  hints.ai_socktype = SOCK_STREAM;
+  addrinfo* raw = nullptr;
+  if (::getaddrinfo(host.c_str(), nullptr, &hints, &raw) != 0 ||
+      raw == nullptr) {
+    return ErrnoError(EHOSTUNREACH);
+  }
+  // getaddrinfo allocates the list; freeaddrinfo is its only release.
+  const std::unique_ptr<addrinfo, decltype(&::freeaddrinfo)> list(
+      raw, &::freeaddrinfo);
+  sockaddr_in addr{};
+  // ai_addr points at a sockaddr_in because ai_family is AF_INET.
+  addr = *reinterpret_cast<const sockaddr_in*>(list->ai_addr);
+  addr.sin_port = htons(port);
   return InetAddress(addr);
 }
 

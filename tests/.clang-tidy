@@ -1,0 +1,9 @@
+# Test-only overrides; everything else comes from the repository's
+# .clang-tidy.
+InheritParentConfig: true
+
+# bugprone-unchecked-optional-access: the check does not understand that a
+# failed gtest ASSERT_TRUE(x.has_value()) returns from the test, so every
+# access after such an assertion is reported as unchecked.
+Checks: >
+  -bugprone-unchecked-optional-access

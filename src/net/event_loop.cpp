@@ -1,6 +1,8 @@
 #include "net/event_loop.h"
 
+#include <algorithm>
 #include <cerrno>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -11,6 +13,9 @@ namespace sluice::net {
 namespace {
 
 constexpr size_t kInitialEventCapacity = 64;
+// Upper bound for one epoll_wait() when a timer is far away; keeps the
+// millisecond count well inside int.
+constexpr int64_t kMaxWaitMs = int64_t{24} * 3600 * 1000;
 
 [[noreturn]] void FatalErrno(const char* what, int err) {
   std::fprintf(stderr, "fatal: %s: %s\n", what, std::strerror(err));
@@ -39,8 +44,7 @@ void EventLoop::Loop() {
 }
 
 int EventLoop::PollOnce(int timeout_ms) {
-  // Never block while tasks are waiting to run.
-  const int timeout = pending_tasks_.empty() ? timeout_ms : 0;
+  const int timeout = EffectiveTimeout(timeout_ms);
   int n = ::epoll_wait(epoll_fd_.get(), events_.data(),
                        static_cast<int>(events_.size()), timeout);
   if (n < 0) {
@@ -69,8 +73,57 @@ int EventLoop::PollOnce(int timeout_ms) {
     events_.resize(events_.size() * 2);
   }
 
+  // Timers run after events so that a timeout never preempts data that
+  // arrived in the same iteration; tasks run last so that anything a timer
+  // queued for DeleteLater is destroyed in this same iteration.
+  RunExpiredTimers();
   RunPendingTasks();
   return n;
+}
+
+int EventLoop::EffectiveTimeout(int timeout_ms) const {
+  // Never block while tasks are waiting to run.
+  if (!pending_tasks_.empty()) {
+    return 0;
+  }
+  if (timers_.empty()) {
+    return timeout_ms;
+  }
+  const Clock::duration until_next =
+      timers_.begin()->first.first - Clock::now();
+  // Round up: waking a millisecond early would just spin once more.
+  const auto ms = std::chrono::ceil<std::chrono::milliseconds>(until_next);
+  const int timer_ms =
+      static_cast<int>(std::clamp<int64_t>(ms.count(), 0, kMaxWaitMs));
+  return timeout_ms < 0 ? timer_ms : std::min(timeout_ms, timer_ms);
+}
+
+EventLoop::TimerId EventLoop::RunAfter(Clock::duration delay, Task task) {
+  const TimerId id = next_timer_id_++;
+  const Clock::time_point deadline = Clock::now() + delay;
+  timers_.emplace(std::pair(deadline, id), std::move(task));
+  timer_deadlines_.emplace(id, deadline);
+  return id;
+}
+
+void EventLoop::CancelTimer(TimerId id) {
+  const auto it = timer_deadlines_.find(id);
+  if (it == timer_deadlines_.end()) {
+    return;
+  }
+  timers_.erase(std::pair(it->second, id));
+  timer_deadlines_.erase(it);
+}
+
+void EventLoop::RunExpiredTimers() {
+  const Clock::time_point now = Clock::now();
+  // One timer at a time: a timer's task may cancel another timer that has
+  // also expired, which must then not run.
+  while (!timers_.empty() && timers_.begin()->first.first <= now) {
+    auto node = timers_.extract(timers_.begin());
+    timer_deadlines_.erase(node.key().second);
+    node.mapped()();
+  }
 }
 
 void EventLoop::QueueInLoop(Task task) {

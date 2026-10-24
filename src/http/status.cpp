@@ -10,6 +10,8 @@ std::string_view ReasonPhrase(StatusCode status) {
       return "Bad Request";
     case StatusCode::kNotFound:
       return "Not Found";
+    case StatusCode::kRequestTimeout:
+      return "Request Timeout";
     case StatusCode::kContentTooLarge:
       return "Content Too Large";
     case StatusCode::kUriTooLong:
@@ -20,6 +22,12 @@ std::string_view ReasonPhrase(StatusCode status) {
       return "Internal Server Error";
     case StatusCode::kNotImplemented:
       return "Not Implemented";
+    case StatusCode::kBadGateway:
+      return "Bad Gateway";
+    case StatusCode::kServiceUnavailable:
+      return "Service Unavailable";
+    case StatusCode::kGatewayTimeout:
+      return "Gateway Timeout";
     case StatusCode::kHttpVersionNotSupported:
       return "HTTP Version Not Supported";
   }

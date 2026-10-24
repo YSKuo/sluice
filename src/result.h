@@ -36,9 +36,10 @@ namespace internal {
 // output parameters.
 //
 // The interface is a small subset of C++23's std::expected<T,
-// std::error_code> (has_value, operator bool, *, ->, error), so moving to
-// std::expected later only changes this header. Accessing the value of a
-// failed Result, or the error of a successful one, is a bug and aborts.
+// std::error_code> (has_value, operator bool, *, ->, error, value_or), so
+// moving to std::expected later only changes this header. Accessing the
+// value of a failed Result, or the error of a successful one, is a bug and
+// aborts.
 template <typename T>
 class [[nodiscard]] Result {
  public:
@@ -65,6 +66,18 @@ class [[nodiscard]] Result {
       internal::ResultMisuse("error() called on a successful Result");
     }
     return std::get<1>(storage_);
+  }
+
+  // The value, or `fallback` if the Result failed.
+  template <typename U>
+  [[nodiscard]] T value_or(U&& fallback) const& {
+    return has_value() ? std::get<0>(storage_)
+                       : static_cast<T>(std::forward<U>(fallback));
+  }
+  template <typename U>
+  [[nodiscard]] T value_or(U&& fallback) && {
+    return has_value() ? std::move(std::get<0>(storage_))
+                       : static_cast<T>(std::forward<U>(fallback));
   }
 
  private:

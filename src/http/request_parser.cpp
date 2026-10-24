@@ -1,102 +1,24 @@
 #include "http/request_parser.h"
 
 #include <algorithm>
-#include <charconv>
 #include <cstdint>
-#include <system_error>
 #include <utility>
 #include <variant>
+
+#include "http/syntax.h"
 
 namespace sluice::http {
 
 namespace {
 
-// tchar from RFC 9110 section 5.6.2: the characters allowed in a token,
-// which is what methods and field names are made of.
-bool IsTokenChar(char c) {
-  if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
-      (c >= '0' && c <= '9')) {
-    return true;
-  }
-  switch (c) {
-    case '!':
-    case '#':
-    case '$':
-    case '%':
-    case '&':
-    case '\'':
-    case '*':
-    case '+':
-    case '-':
-    case '.':
-    case '^':
-    case '_':
-    case '`':
-    case '|':
-    case '~':
-      return true;
-    default:
-      return false;
-  }
-}
-
-bool IsToken(std::string_view s) {
-  return !s.empty() && std::ranges::all_of(s, IsTokenChar);
-}
-
-// Visible ASCII, the only bytes allowed in an origin-form request-target.
-bool IsVisibleAscii(char c) { return c > 0x20 && c < 0x7F; }
-
-// Field values may contain visible characters, spaces, tabs, and obs-text
-// (bytes >= 0x80), but no other control characters (RFC 9110 5.5).
-bool IsFieldValueChar(char c) {
-  const auto byte = static_cast<unsigned char>(c);
-  return byte == '\t' || byte == ' ' || (byte > 0x20 && byte != 0x7F);
-}
-
-std::string_view TrimOptionalWhitespace(std::string_view s) {
-  const size_t first = s.find_first_not_of(" \t");
-  if (first == std::string_view::npos) {
-    return {};
-  }
-  const size_t last = s.find_last_not_of(" \t");
-  return s.substr(first, last - first + 1);
-}
-
-bool IsDigit(char c) { return c >= '0' && c <= '9'; }
-
-// Outcome of looking for the next CRLF-terminated line.
-struct Line {
-  enum class Kind : uint8_t {
-    kComplete,
-    kIncomplete,  // No LF yet; wait for more data.
-    kMalformed,   // A bare CR or bare LF.
-  };
-  Kind kind;
-  std::string_view text;  // Without the CRLF; valid only for kComplete.
-  size_t size;            // Including the CRLF; valid only for kComplete.
-};
-
-Line NextLine(std::string_view data) {
-  const size_t lf = data.find('\n');
-  if (lf == std::string_view::npos) {
-    // A CR is allowed only as the very last byte, where its LF may still
-    // be on the way.
-    const size_t cr = data.find('\r');
-    if (cr != std::string_view::npos && cr + 1 < data.size()) {
-      return {.kind = Line::Kind::kMalformed, .text = {}, .size = 0};
-    }
-    return {.kind = Line::Kind::kIncomplete, .text = {}, .size = 0};
-  }
-  if (lf == 0 || data[lf - 1] != '\r') {
-    return {.kind = Line::Kind::kMalformed, .text = {}, .size = 0};
-  }
-  const std::string_view text = data.substr(0, lf - 1);
-  if (text.find('\r') != std::string_view::npos) {
-    return {.kind = Line::Kind::kMalformed, .text = {}, .size = 0};
-  }
-  return {.kind = Line::Kind::kComplete, .text = text, .size = lf + 1};
-}
+using internal::ContentLength;
+using internal::IsDigit;
+using internal::IsToken;
+using internal::IsVisibleAscii;
+using internal::Line;
+using internal::NextLine;
+using internal::ParseContentLength;
+using internal::ParseFieldLine;
 
 // Parses "HTTP/1.1" or "HTTP/1.0", returning the version or the status to
 // fail with: any other well-formed "HTTP/x.y" is a version we do not
@@ -228,28 +150,16 @@ std::optional<StatusCode> RequestParser::HandleHeaderLine(
   if (line.empty()) {
     return FinishHeaders();
   }
-  // obs-fold: a continuation line starting with whitespace (RFC 9112 5.2).
-  if (line.front() == ' ' || line.front() == '\t') {
-    return StatusCode::kBadRequest;
-  }
-  const size_t colon = line.find(':');
-  if (colon == std::string_view::npos) {
-    return StatusCode::kBadRequest;
-  }
-  // The name must be a bare token: whitespace before the colon is
-  // rejected, as RFC 9112 section 5.1 requires.
-  const std::string_view name = line.substr(0, colon);
-  if (!IsToken(name)) {
-    return StatusCode::kBadRequest;
-  }
-  const std::string_view value = TrimOptionalWhitespace(line.substr(colon + 1));
-  if (!std::ranges::all_of(value, IsFieldValueChar)) {
+  // Rejects obs-fold, whitespace before the colon, and control characters
+  // in the value (see internal::ParseFieldLine).
+  const std::optional<internal::FieldLine> field = ParseFieldLine(line);
+  if (!field) {
     return StatusCode::kBadRequest;
   }
   if (request_.headers.size() >= limits_.max_header_count) {
     return StatusCode::kRequestHeaderFieldsTooLarge;
   }
-  request_.headers.Add(name, value);
+  request_.headers.Add(field->name, field->value);
   return std::nullopt;
 }
 
@@ -269,34 +179,16 @@ std::optional<StatusCode> RequestParser::FinishHeaders() {
     return StatusCode::kBadRequest;
   }
 
-  // Every Content-Length field must be a plain decimal number, and all of
-  // them must agree. Signs ("+5"), lists ("5, 5"), and values that overflow
-  // 64 bits are rejected.
-  std::optional<uint64_t> length;
-  for (const Headers::Field& field : headers.fields()) {
-    if (!EqualsIgnoreCase(field.name, "Content-Length")) {
-      continue;
-    }
-    const std::string_view text = field.value;
-    if (text.empty() || !std::ranges::all_of(text, IsDigit)) {
-      return StatusCode::kBadRequest;
-    }
-    uint64_t value = 0;
-    const auto [ptr, ec] =
-        std::from_chars(text.data(), text.data() + text.size(), value);
-    if (ec == std::errc::result_out_of_range) {
-      return StatusCode::kContentTooLarge;
-    }
-    if (ec != std::errc() || ptr != text.data() + text.size()) {
-      return StatusCode::kBadRequest;
-    }
-    if (length && *length != value) {
-      return StatusCode::kBadRequest;
-    }
-    length = value;
+  // Every Content-Length field must be plain digits, and all must agree.
+  const ContentLength length = ParseContentLength(headers);
+  if (length.kind == ContentLength::Kind::kInvalid) {
+    return StatusCode::kBadRequest;
   }
-
-  const uint64_t body_length = length.value_or(0);
+  if (length.kind == ContentLength::Kind::kOverflow) {
+    return StatusCode::kContentTooLarge;
+  }
+  const uint64_t body_length =
+      length.kind == ContentLength::Kind::kValue ? length.value : 0;
   if (body_length > limits_.max_body_bytes) {
     return StatusCode::kContentTooLarge;
   }

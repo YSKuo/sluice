@@ -31,6 +31,10 @@ class Socket {
   [[nodiscard]] Result<void> SetNoDelay(bool on);
   [[nodiscard]] Result<void> Bind(const InetAddress& addr);
   [[nodiscard]] Result<void> Listen(int backlog);
+  // Starts a non-blocking connect. EINPROGRESS (std::errc::
+  // operation_in_progress) is the normal outcome: the connection completes
+  // later, when the socket becomes writable (see Connector).
+  [[nodiscard]] Result<void> Connect(const InetAddress& addr);
   // The accepted socket is non-blocking and close-on-exec.
   [[nodiscard]] Result<AcceptedSocket> Accept();
 

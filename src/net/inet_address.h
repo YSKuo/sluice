@@ -9,6 +9,8 @@
 #include <string>
 #include <string_view>
 
+#include "result.h"
+
 namespace sluice::net {
 
 // An IPv4 address + port, stored as the sockaddr_in the kernel expects.
@@ -19,6 +21,10 @@ class InetAddress {
   // if `ip` is not a valid IPv4 literal (host names are not resolved).
   static std::optional<InetAddress> FromIpPort(std::string_view ip,
                                                uint16_t port);
+  // Resolves `host` (a name such as "backend-a" or an IPv4 literal) to its
+  // first IPv4 address. Blocks on DNS, so call it only at startup, never on
+  // the event loop. Fails with EHOSTUNREACH if the name does not resolve.
+  static Result<InetAddress> Resolve(const std::string& host, uint16_t port);
   // 0.0.0.0:<port>, i.e. every local interface.
   static InetAddress Any(uint16_t port);
   // 127.0.0.1:<port>

@@ -21,6 +21,11 @@ against Nginx under equivalent reverse-proxy configurations.
   (1 core) and memory limits, one worker each, Nginx's access log off, and
   no upstream connection pooling on either side (`deploy/nginx/nginx.conf`
   documents each matching choice).
+- The Python backends raise their listen backlog from socketserver's
+  default of 5 to 1024. Both gateways open a new upstream connection per
+  request, so a backlog of 5 overflows under bursts; the dropped SYNs are
+  retried after 1 s and produced ~1 s p99 latency for nginx and sluice
+  alike in early smoke tests, an artifact of the backend, not the gateway.
 - Each run records: request rate, duration, p50/p90/p99/p99.9 latency, error
   count, and CPU/memory usage of the gateway process.
 - Hardware and OS details (CPU model, core count, RAM, kernel version, and

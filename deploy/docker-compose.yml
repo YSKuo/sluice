@@ -12,6 +12,16 @@ services:
     build:
       context: ..
       dockerfile: deploy/sluice/Dockerfile
+    # Same routing table as deploy/nginx/nginx.conf.
+    command:
+      - "--host"
+      - "0.0.0.0"
+      - "--port"
+      - "8080"
+      - "--route"
+      - "/api/=backend-a:9000,backend-b:9000"
+      - "--route"
+      - "/=backend-a:9000,backend-b:9000,backend-c:9000"
     ports:
       - "8080:8080"
     depends_on:

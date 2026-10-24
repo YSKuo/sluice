@@ -6,20 +6,21 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
-#include <format>
 #include <memory>
 #include <optional>
 #include <span>
 #include <string>
 #include <string_view>
+#include <utility>
+#include <vector>
 
-#include "http/http_server.h"
-#include "http/request.h"
-#include "http/response.h"
 #include "net/channel.h"
 #include "net/event_loop.h"
 #include "net/inet_address.h"
 #include "net/unique_fd.h"
+#include "proxy/proxy_options.h"
+#include "proxy/proxy_server.h"
+#include "proxy/route_table.h"
 #include "result.h"
 #include "version.h"
 
@@ -28,17 +29,22 @@ namespace {
 struct Options {
   std::string_view host = "0.0.0.0";
   uint16_t port = 8080;
+  std::vector<sluice::proxy::RouteSpec> routes;
   bool show_version = false;
   bool show_help = false;
 };
 
 void PrintUsage() {
   std::printf(
-      "usage: sluice [--host IPV4] [--port PORT] [--version] [--help]\n"
+      "usage: sluice --route PREFIX=HOST:PORT[,HOST:PORT...] [--route ...]\n"
+      "              [--host IPV4] [--port PORT] [--version] [--help]\n"
       "\n"
-      "Week 2 milestone: serves HTTP/1.1 on HOST:PORT (default\n"
-      "0.0.0.0:8080), answering every request with a plain-text summary of\n"
-      "it. Stop it with Ctrl-C or SIGTERM.\n");
+      "Reverse proxy listening on HOST:PORT (default 0.0.0.0:8080). Each\n"
+      "request goes to the route with the longest matching path prefix, and\n"
+      "round robin across that route's upstreams, e.g.\n"
+      "  --route /api/=10.0.0.5:9000,10.0.0.6:9000 --route /=10.0.0.7:9000\n"
+      "Upstream host names are resolved once at startup. Stop it with\n"
+      "Ctrl-C or SIGTERM.\n");
 }
 
 // Parses a whole string as a TCP port; trailing characters are rejected.
@@ -75,6 +81,16 @@ std::optional<Options> ParseArgs(std::span<char* const> args) {
         return std::nullopt;
       }
       options.port = *port;
+    } else if (arg == "--route" && has_value) {
+      const std::string_view value = args[++i];
+      std::optional<sluice::proxy::RouteSpec> route =
+          sluice::proxy::ParseRouteSpec(value);
+      if (!route) {
+        std::fprintf(stderr, "sluice: invalid route '%s'\n",
+                     std::string(value).c_str());
+        return std::nullopt;
+      }
+      options.routes.push_back(*std::move(route));
     } else {
       std::fprintf(stderr, "sluice: unknown or incomplete argument '%s'\n",
                    std::string(arg).c_str());
@@ -84,15 +100,32 @@ std::optional<Options> ParseArgs(std::span<char* const> args) {
   return options;
 }
 
-// The Week 2 handler: describes the request back to the client. Week 3
-// replaces it with routing and the reverse proxy.
-sluice::http::Response DescribeRequest(const sluice::http::Request& request) {
-  sluice::http::Response response;
-  response.headers.Add("Content-Type", "text/plain; charset=utf-8");
-  response.body =
-      std::format("sluice {}\n{} {}\nbody: {} bytes\n", sluice::GetVersion(),
-                  request.method, request.target, request.body.size());
-  return response;
+// Resolves every route's upstream names (blocking DNS, so only at
+// startup) and builds the routing table. Prints why on failure.
+std::optional<sluice::proxy::RouteTable> BuildRouteTable(
+    const std::vector<sluice::proxy::RouteSpec>& specs) {
+  sluice::proxy::RouteTable table;
+  for (const sluice::proxy::RouteSpec& spec : specs) {
+    std::vector<std::pair<std::string, sluice::net::InetAddress>> targets;
+    for (const sluice::proxy::RouteSpec::Target& target : spec.targets) {
+      const sluice::Result<sluice::net::InetAddress> address =
+          sluice::net::InetAddress::Resolve(target.host, target.port);
+      if (!address) {
+        std::fprintf(stderr, "sluice: cannot resolve '%s'\n",
+                     target.host.c_str());
+        return std::nullopt;
+      }
+      targets.emplace_back(target.host + ":" + std::to_string(target.port),
+                           *address);
+    }
+    if (sluice::Result<void> added = table.AddRoute(spec.prefix, targets);
+        !added) {
+      std::fprintf(stderr, "sluice: duplicate route '%s'\n",
+                   spec.prefix.c_str());
+      return std::nullopt;
+    }
+  }
+  return table;
 }
 
 // Delivers SIGINT/SIGTERM through a signalfd so they arrive as ordinary
@@ -131,6 +164,17 @@ int main(int argc, char** argv) {
   if (options->show_version) {
     std::printf("sluice %s\n", std::string(sluice::GetVersion()).c_str());
     return 0;
+  }
+
+  if (options->routes.empty()) {
+    std::fprintf(stderr, "sluice: at least one --route is required\n");
+    PrintUsage();
+    return 2;
+  }
+  std::optional<sluice::proxy::RouteTable> routes =
+      BuildRouteTable(options->routes);
+  if (!routes) {
+    return 2;
   }
 
   const std::optional<sluice::net::InetAddress> listen_addr =
@@ -173,9 +217,10 @@ int main(int argc, char** argv) {
     return 1;
   }
 
-  sluice::Result<std::unique_ptr<sluice::http::HttpServer>> server =
-      sluice::http::HttpServer::Create(&event_loop, *listen_addr,
-                                       DescribeRequest);
+  sluice::Result<std::unique_ptr<sluice::proxy::ProxyServer>> server =
+      sluice::proxy::ProxyServer::Create(&event_loop, *listen_addr,
+                                         *std::move(routes),
+                                         sluice::proxy::ProxyOptions());
   sluice::Result<void> started;
   if (server) {
     started = (*server)->Start();
@@ -191,9 +236,18 @@ int main(int argc, char** argv) {
     return 1;
   }
 
-  std::fprintf(stderr, "sluice %s: HTTP server listening on %s\n",
+  std::fprintf(stderr, "sluice %s: proxy listening on %s\n",
                std::string(sluice::GetVersion()).c_str(),
                listen_addr->ToString().c_str());
+  for (const sluice::proxy::RouteTable::Route& route :
+       (*server)->routes().routes()) {
+    std::string upstreams;
+    for (const sluice::proxy::Upstream* upstream : route.balancer.upstreams()) {
+      upstreams += (upstreams.empty() ? "" : ", ") + upstream->name();
+    }
+    std::fprintf(stderr, "  route %s -> %s\n", route.prefix.c_str(),
+                 upstreams.c_str());
+  }
   event_loop.Loop();
 
   // Tear down in reverse order of registration; the loop is destroyed last

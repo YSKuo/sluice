@@ -61,6 +61,12 @@ def main():
     Handler.delay_ms = args.delay_ms
     Handler.fail_rate = args.fail_rate
 
+    # socketserver's default listen backlog is 5. Both gateways open a new
+    # upstream connection per request, so bursts overflow such a backlog;
+    # the dropped SYNs are retried after 1 s and show up as ~1 s tail
+    # latency that has nothing to do with the gateway under test.
+    ThreadingHTTPServer.request_queue_size = 1024
+    ThreadingHTTPServer.daemon_threads = True
     server = ThreadingHTTPServer(("0.0.0.0", args.port), Handler)
     server.serve_forever()
 

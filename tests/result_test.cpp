@@ -30,6 +30,11 @@ TEST(ResultTest, HoldsError) {
   EXPECT_EQ(result.error(), std::errc::invalid_argument);
 }
 
+TEST(ResultTest, ValueOr) {
+  EXPECT_EQ(Half(10).value_or(-1), 5);
+  EXPECT_EQ(Half(3).value_or(-1), -1);
+}
+
 TEST(ResultTest, SupportsMoveOnlyValues) {
   Result<std::unique_ptr<int>> result = std::make_unique<int>(7);
   ASSERT_TRUE(result.has_value());
