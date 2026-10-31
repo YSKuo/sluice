@@ -36,6 +36,8 @@ class InetAddress {
 
   // Port in host byte order.
   [[nodiscard]] uint16_t port() const noexcept;
+  // IPv4 address in host byte order, e.g. 0x7F000001 for 127.0.0.1.
+  [[nodiscard]] uint32_t ip() const noexcept;
   // "a.b.c.d:port"
   [[nodiscard]] std::string ToString() const;
 

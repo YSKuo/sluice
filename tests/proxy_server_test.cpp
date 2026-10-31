@@ -25,6 +25,7 @@
 #include "net/socket.h"
 #include "net/unique_fd.h"
 #include "proxy/proxy_options.h"
+#include "proxy/rate_limiter.h"
 #include "proxy/route_table.h"
 #include "result.h"
 #include "test_client.h"
@@ -466,6 +467,29 @@ TEST_F(ProxyServerTest, SlowClientPausesUpstream) {
     return !responses.empty();
   }));
   EXPECT_TRUE(responses[0].body == test::MakePayload(large_body_));
+}
+
+TEST_F(ProxyServerTest, RateLimitRejectsExcessRequestsWith429) {
+  // Two requests at once, then one every 10 s: the third is rejected.
+  options_.rate_limit = RateLimit{.requests_per_second = 0.1, .burst = 2};
+  StartProxy({{"/", {StartUpstream("a")}}});
+  TestClient client(proxy_address_);
+  client.QueueSend(Get("/1") + Get("/2") + Get("/3"));
+  std::vector<ClientResponse> responses;
+  ASSERT_TRUE(RunUntil({&client}, [&] {
+    responses = ParseResponses(client.received());
+    return responses.size() == 3;
+  }));
+  EXPECT_EQ(responses[0].head.status, 200);
+  EXPECT_EQ(responses[1].head.status, 200);
+  EXPECT_EQ(responses[2].head.status, 429);
+  EXPECT_EQ(responses[2].head.headers.Get("Retry-After").value_or(""), "10");
+  // The connection stays usable, so the client can retry later.
+  EXPECT_EQ(responses[2].head.headers.Get("Connection").value_or(""),
+            "keep-alive");
+  EXPECT_EQ(proxy_->stats().rate_limited, 1U);
+  ASSERT_NE(proxy_->rate_limiter(), nullptr);
+  EXPECT_EQ(proxy_->rate_limiter()->tracked_clients(), 1U);
 }
 
 TEST_F(ProxyServerTest, ClientDisconnectCancelsUpstream) {

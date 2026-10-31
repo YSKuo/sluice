@@ -27,6 +27,7 @@ add_executable(sluice_tests
     http_server_test.cpp
     inet_address_test.cpp
     proxy_forwarding_test.cpp
+    proxy_rate_limiter_test.cpp
     proxy_routing_test.cpp
     proxy_server_test.cpp
     result_test.cpp

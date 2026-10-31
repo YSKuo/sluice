@@ -7,12 +7,14 @@
 
 #include "http/request.h"
 #include "http/request_parser.h"
+#include "http/response.h"
 #include "http/response_parser.h"
 #include "http/status.h"
 #include "net/event_loop.h"
 #include "net/tcp_connection.h"
 #include "net/timer.h"
 #include "proxy/proxy_options.h"
+#include "proxy/rate_limiter.h"
 #include "proxy/route_table.h"
 #include "proxy/upstream.h"
 #include "proxy/upstream_call.h"
@@ -37,9 +39,10 @@ namespace sluice::proxy {
 // outlives the session.
 class ClientSession {
  public:
+  // `rate_limiter` may be null (rate limiting disabled).
   ClientSession(net::EventLoop* loop, net::TcpConnection* client,
-                RouteTable* routes, const ProxyOptions* options,
-                ProxyStats* stats);
+                RouteTable* routes, RateLimiter* rate_limiter,
+                const ProxyOptions* options, ProxyStats* stats);
 
   // Callbacks on the upstream call and the timer capture `this`.
   ClientSession(const ClientSession&) = delete;
@@ -75,6 +78,7 @@ class ClientSession {
   void ProcessRequests();
   void HandleRequest(const http::Request& request);
   void SendLocalResponse(http::StatusCode status, bool keep_alive);
+  void SendLocalResponse(const http::Response& response, bool keep_alive);
   void UpdateReadTimer();
 
   void OnUpstreamHead(const http::ResponseHead& head,
@@ -89,6 +93,7 @@ class ClientSession {
   net::EventLoop* loop_;
   net::TcpConnection* client_;
   RouteTable* routes_;
+  RateLimiter* rate_limiter_;
   const ProxyOptions* options_;
   ProxyStats* stats_;
 

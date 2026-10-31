@@ -14,6 +14,7 @@ enum class StatusCode : uint16_t {
   kRequestTimeout = 408,
   kContentTooLarge = 413,
   kUriTooLong = 414,
+  kTooManyRequests = 429,
   kRequestHeaderFieldsTooLarge = 431,
   kInternalServerError = 500,
   kNotImplemented = 501,

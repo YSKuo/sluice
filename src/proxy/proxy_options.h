@@ -4,8 +4,10 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 
 #include "http/request_parser.h"
+#include "proxy/rate_limiter.h"
 
 namespace sluice::proxy {
 
@@ -34,6 +36,13 @@ struct ProxyOptions {
   // Backpressure: when this many response bytes are queued for a client,
   // stop reading from the upstream until the client has drained them.
   size_t response_high_water_mark = size_t{256} * 1024;
+
+  // Per-client-IP rate limit; nullopt disables rate limiting.
+  std::optional<RateLimit> rate_limit;
+  // Bound on tracked client IPs (see RateLimiter).
+  size_t rate_limit_max_clients = 100'000;
+  // How often buckets that have refilled completely are dropped.
+  std::chrono::milliseconds rate_limit_sweep_interval{30'000};
 };
 
 // Counters for tests and future observability.
@@ -42,6 +51,8 @@ struct ProxyStats {
   uint64_t upstream_failures = 0;
   // Times an upstream was paused because its client fell behind.
   uint64_t upstream_read_pauses = 0;
+  // Requests answered with 429 by the rate limiter.
+  uint64_t rate_limited = 0;
 };
 
 }  // namespace sluice::proxy

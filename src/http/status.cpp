@@ -16,6 +16,8 @@ std::string_view ReasonPhrase(StatusCode status) {
       return "Content Too Large";
     case StatusCode::kUriTooLong:
       return "URI Too Long";
+    case StatusCode::kTooManyRequests:
+      return "Too Many Requests";
     case StatusCode::kRequestHeaderFieldsTooLarge:
       return "Request Header Fields Too Large";
     case StatusCode::kInternalServerError:

@@ -3,18 +3,18 @@
 #include <string>
 #include <utility>
 
-#include "http/response.h"
 #include "net/buffer.h"
 #include "proxy/forwarding.h"
 
 namespace sluice::proxy {
 
 ClientSession::ClientSession(net::EventLoop* loop, net::TcpConnection* client,
-                             RouteTable* routes, const ProxyOptions* options,
-                             ProxyStats* stats)
+                             RouteTable* routes, RateLimiter* rate_limiter,
+                             const ProxyOptions* options, ProxyStats* stats)
     : loop_(loop),
       client_(client),
       routes_(routes),
+      rate_limiter_(rate_limiter),
       options_(options),
       stats_(stats),
       parser_(options->limits),
@@ -83,6 +83,22 @@ void ClientSession::HandleRequest(const http::Request& request) {
   ++stats_->requests;
   keep_alive_ = http::IsKeepAlive(request);
 
+  // Checked before anything else touches an upstream: a rejected request
+  // costs one map lookup and a small local response.
+  if (rate_limiter_ != nullptr) {
+    const RateLimiter::Decision decision =
+        rate_limiter_->Allow(client_->peer().ip(), Clock::now());
+    if (!decision.allowed) {
+      ++stats_->rate_limited;
+      http::Response response =
+          http::MakeErrorResponse(http::StatusCode::kTooManyRequests);
+      response.headers.Add("Retry-After",
+                           std::to_string(decision.retry_after.count()));
+      SendLocalResponse(response, keep_alive_);
+      return;
+    }
+  }
+
   if (HasDotSegment(request.target)) {
     SendLocalResponse(http::StatusCode::kBadRequest, keep_alive_);
     return;
@@ -136,7 +152,12 @@ void ClientSession::HandleRequest(const http::Request& request) {
 
 void ClientSession::SendLocalResponse(http::StatusCode status,
                                       bool keep_alive) {
-  client_->Send(http::Serialize(http::MakeErrorResponse(status), keep_alive));
+  SendLocalResponse(http::MakeErrorResponse(status), keep_alive);
+}
+
+void ClientSession::SendLocalResponse(const http::Response& response,
+                                      bool keep_alive) {
+  client_->Send(http::Serialize(response, keep_alive));
   if (!keep_alive) {
     client_->Shutdown();
   }

@@ -99,6 +99,12 @@ ctest --preset debug-asan --output-on-failure
 
 # Fuzz the HTTP parser (optional; not part of check.sh)
 ./scripts/fuzz.sh 60
+
+# Sanitizer soak test under load (not part of check.sh)
+./scripts/soak.sh 60
+
+# Benchmark against Nginx (see bench/README.md)
+./bench/run.sh 60 2000 5000 10000 15000
 ```
 
 ## Working rules

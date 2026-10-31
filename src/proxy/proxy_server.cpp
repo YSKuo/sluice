@@ -24,7 +24,13 @@ ProxyServer::ProxyServer(PassKey /*key*/, net::EventLoop* loop,
     : loop_(loop),
       routes_(std::move(routes)),
       options_(options),
+      sweep_timer_(loop),
       server_(std::move(server)) {
+  if (options_.rate_limit) {
+    rate_limiter_ = std::make_unique<RateLimiter>(
+        *options_.rate_limit, options_.rate_limit_max_clients);
+    SweepRateLimiter();
+  }
   server_->SetConnectionCallback(
       [this](net::TcpConnection& conn) { OnConnection(conn); });
   server_->SetCloseCallback(
@@ -43,8 +49,8 @@ ProxyServer::ProxyServer(PassKey /*key*/, net::EventLoop* loop,
 }
 
 void ProxyServer::OnConnection(net::TcpConnection& conn) {
-  auto session = std::make_unique<ClientSession>(loop_, &conn, &routes_,
-                                                 &options_, &stats_);
+  auto session = std::make_unique<ClientSession>(
+      loop_, &conn, &routes_, rate_limiter_.get(), &options_, &stats_);
   ClientSession& ref = *session;
   sessions_.emplace(conn.id(), std::move(session));
   ref.Start();
@@ -58,6 +64,12 @@ void ProxyServer::OnClose(net::TcpConnection& conn) {
   node.mapped()->OnClientClosed();
   // The close usually happens inside the session's own call stack.
   loop_->DeleteLater(std::move(node.mapped()));
+}
+
+void ProxyServer::SweepRateLimiter() {
+  rate_limiter_->EvictIdle(Clock::now());
+  sweep_timer_.Arm(options_.rate_limit_sweep_interval,
+                   [this] { SweepRateLimiter(); });
 }
 
 ClientSession* ProxyServer::FindSession(const net::TcpConnection& conn) {

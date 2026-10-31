@@ -10,8 +10,10 @@
 #include "net/inet_address.h"
 #include "net/tcp_connection.h"
 #include "net/tcp_server.h"
+#include "net/timer.h"
 #include "proxy/client_session.h"
 #include "proxy/proxy_options.h"
+#include "proxy/rate_limiter.h"
 #include "proxy/route_table.h"
 #include "result.h"
 
@@ -56,16 +58,24 @@ class ProxyServer {
   }
   [[nodiscard]] const ProxyStats& stats() const noexcept { return stats_; }
   [[nodiscard]] RouteTable& routes() noexcept { return routes_; }
+  // Null when rate limiting is disabled.
+  [[nodiscard]] const RateLimiter* rate_limiter() const noexcept {
+    return rate_limiter_.get();
+  }
 
  private:
   void OnConnection(net::TcpConnection& conn);
   void OnClose(net::TcpConnection& conn);
   ClientSession* FindSession(const net::TcpConnection& conn);
+  // Drops idle rate-limit buckets, then re-arms itself.
+  void SweepRateLimiter();
 
   net::EventLoop* loop_;
   RouteTable routes_;
   ProxyOptions options_;
   ProxyStats stats_;
+  std::unique_ptr<RateLimiter> rate_limiter_;
+  net::Timer sweep_timer_;
   std::unique_ptr<net::TcpServer> server_;
   // Declared last so sessions (which point at the members above) are
   // destroyed first.

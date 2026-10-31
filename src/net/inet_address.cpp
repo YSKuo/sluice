@@ -68,6 +68,10 @@ InetAddress::InetAddress() noexcept : addr_(MakeSockaddr(INADDR_ANY, 0)) {}
 
 uint16_t InetAddress::port() const noexcept { return ntohs(addr_.sin_port); }
 
+uint32_t InetAddress::ip() const noexcept {
+  return ntohl(addr_.sin_addr.s_addr);
+}
+
 std::string InetAddress::ToString() const {
   std::array<char, INET_ADDRSTRLEN> ip{};
   // Cannot fail: the family is always AF_INET and the buffer is large enough.

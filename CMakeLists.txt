@@ -48,6 +48,7 @@ add_library(sluice_core
     src/proxy/client_session.cpp
     src/proxy/forwarding.cpp
     src/proxy/proxy_server.cpp
+    src/proxy/rate_limiter.cpp
     src/proxy/route_table.cpp
     src/proxy/upstream.cpp
     src/proxy/upstream_call.cpp

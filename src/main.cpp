@@ -30,6 +30,7 @@ struct Options {
   std::string_view host = "0.0.0.0";
   uint16_t port = 8080;
   std::vector<sluice::proxy::RouteSpec> routes;
+  std::optional<sluice::proxy::RateLimit> rate_limit;
   bool show_version = false;
   bool show_help = false;
 };
@@ -37,14 +38,17 @@ struct Options {
 void PrintUsage() {
   std::printf(
       "usage: sluice --route PREFIX=HOST:PORT[,HOST:PORT...] [--route ...]\n"
-      "              [--host IPV4] [--port PORT] [--version] [--help]\n"
+      "              [--rate-limit RPS:BURST] [--host IPV4] [--port PORT]\n"
+      "              [--version] [--help]\n"
       "\n"
       "Reverse proxy listening on HOST:PORT (default 0.0.0.0:8080). Each\n"
       "request goes to the route with the longest matching path prefix, and\n"
       "round robin across that route's upstreams, e.g.\n"
       "  --route /api/=10.0.0.5:9000,10.0.0.6:9000 --route /=10.0.0.7:9000\n"
-      "Upstream host names are resolved once at startup. Stop it with\n"
-      "Ctrl-C or SIGTERM.\n");
+      "Upstream host names are resolved once at startup.\n"
+      "--rate-limit allows each client IP RPS requests per second on\n"
+      "average, in bursts of up to BURST (e.g. 100:200); excess requests get\n"
+      "429. Stop it with Ctrl-C or SIGTERM.\n");
 }
 
 // Parses a whole string as a TCP port; trailing characters are rejected.
@@ -91,6 +95,14 @@ std::optional<Options> ParseArgs(std::span<char* const> args) {
         return std::nullopt;
       }
       options.routes.push_back(*std::move(route));
+    } else if (arg == "--rate-limit" && has_value) {
+      const std::string_view value = args[++i];
+      options.rate_limit = sluice::proxy::ParseRateLimit(value);
+      if (!options.rate_limit) {
+        std::fprintf(stderr, "sluice: invalid rate limit '%s'\n",
+                     std::string(value).c_str());
+        return std::nullopt;
+      }
     } else {
       std::fprintf(stderr, "sluice: unknown or incomplete argument '%s'\n",
                    std::string(arg).c_str());
@@ -217,10 +229,11 @@ int main(int argc, char** argv) {
     return 1;
   }
 
+  sluice::proxy::ProxyOptions proxy_options;
+  proxy_options.rate_limit = options->rate_limit;
   sluice::Result<std::unique_ptr<sluice::proxy::ProxyServer>> server =
       sluice::proxy::ProxyServer::Create(&event_loop, *listen_addr,
-                                         *std::move(routes),
-                                         sluice::proxy::ProxyOptions());
+                                         *std::move(routes), proxy_options);
   sluice::Result<void> started;
   if (server) {
     started = (*server)->Start();
@@ -247,6 +260,11 @@ int main(int argc, char** argv) {
     }
     std::fprintf(stderr, "  route %s -> %s\n", route.prefix.c_str(),
                  upstreams.c_str());
+  }
+  if (options->rate_limit) {
+    std::fprintf(stderr, "  rate limit: %g req/s per client IP, burst %g\n",
+                 options->rate_limit->requests_per_second,
+                 options->rate_limit->burst);
   }
   event_loop.Loop();
 
